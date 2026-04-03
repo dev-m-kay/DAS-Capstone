@@ -4,7 +4,7 @@ A web-based submission management platform for the KCR literary magazine. Suppor
 
 ---
 ## Milestone 3 Specific
-This milestones contains code for all the controllers besides the message controller. Everything to look at has been merged into the main branch.   
+This milestones contains code for all the controllers besides the message controller; admin and auth routes were also completed. Everything to look at has been merged into the main branch.   
 
 ## Milestone 2 Specific
 This milestone contains code for the review model, the user model, the adminController, as well as the authcontroller. The Branches to look at are the main branch for the adminController, as well as dmkay_authController for the authController code (not pushed to main yet) and sikontoure-review-model for the review model.

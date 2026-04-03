@@ -7,9 +7,8 @@
 // app.use(express.json());
 // app.use(express.urlencoded({extended: true}));
 const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
 const User = require('../models/User');
-const {generatetoken} = require('../middleware/auth')
+const {generateToken} = require('../middleware/auth')
 
 
 
