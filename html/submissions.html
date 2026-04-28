@@ -11,7 +11,6 @@
 <body>
   <div class="app-layout">
 
-    <!-- Sidebar -->
     <aside class="sidebar" id="sidebar">
       <div class="sidebar-brand">
         <div class="logo">KCR</div>
@@ -20,9 +19,10 @@
           <small>Submission Portal</small>
         </div>
       </div>
+
       <nav class="sidebar-nav" id="sidebarNav">
-        <!--Links will be filled in here by apps.js-->
       </nav>
+
       <div class="sidebar-footer">
         <div class="avatar" id="userAvatar">U</div>
         <div class="user-info">
@@ -32,13 +32,13 @@
       </div>
     </aside>
 
-    <!-- Main -->
     <div class="main-content">
       <header class="top-bar">
         <div style="display:flex;align-items:center;gap:1rem;">
           <button class="hamburger" onclick="document.getElementById('sidebar').classList.toggle('open')">&#9776;</button>
           <span class="page-title">My Submissions</span>
         </div>
+
         <div class="top-bar-actions">
           <a href="submit.html" class="btn btn-primary btn-sm">+ New Submission</a>
           <button onclick="signOut()" class="btn btn-secondary btn-sm">Sign Out</button>
@@ -46,20 +46,22 @@
       </header>
 
       <div class="page-content">
-        <!-- Filters -->
+
         <div class="filters-bar">
           <div class="search-input">
             <span class="search-icon">&#128269;</span>
-            <input type="text" placeholder="Search by title, genre, or ID...">
+            <input id="submissions-search" type="text" placeholder="Search by title, genre, or ID...">
           </div>
-          <select class="filter-select">
+
+          <select id="filter-status" class="filter-select">
             <option value="">All Statuses</option>
-            <option>Pending</option>
-            <option>In Review</option>
-            <option>Accepted</option>
-            <option>Rejected</option>
+            <option value="pending">Pending</option>
+            <option value="in_review">In Review</option>
+            <option value="accepted">Accepted</option>
+            <option value="rejected">Rejected</option>
           </select>
-          <select class="filter-select">
+
+          <select id="filter-genre" class="filter-select">
             <option value="">All Genres</option>
             <option>Poetry</option>
             <option>Short Fiction</option>
@@ -67,14 +69,14 @@
             <option>Visual Art</option>
             <option>Photography</option>
           </select>
-          <select class="filter-select">
-            <option value="">Sort: Newest First</option>
-            <option>Oldest First</option>
-            <option>Title A-Z</option>
+
+          <select id="filter-sort" class="filter-select">
+            <option value="newest">Sort: Newest First</option>
+            <option value="oldest">Oldest First</option>
+            <option value="title">Title A-Z</option>
           </select>
         </div>
 
-        <!-- Submissions Table -->
         <div class="card">
           <div class="card-body" style="padding:0;">
             <div class="table-wrapper">
@@ -91,183 +93,33 @@
                     <th>Actions</th>
                   </tr>
                 </thead>
-                <tbody>
+
+                <tbody id="my-submissions-tbody">
                   <tr>
-                    <td><strong>#KCR-0042</strong></td>
-                    <td>Whispers of Autumn</td>
-                    <td>Poetry</td>
-                    <td>320</td>
-                    <td>Feb 10, 2026</td>
-                    <td><span class="badge badge-pending">Pending</span></td>
-                    <td class="text-muted">&mdash;</td>
-                    <td>
-                      <div class="btn-group">
-                        <a href="submission-detail.html" class="btn btn-secondary btn-sm">View</a>
-                        <a href="messages.html" class="btn btn-secondary btn-sm" title="Messages">&#9993;</a>
-                      </div>
-                    </td>
-                  </tr>
-                  <tr>
-                    <td><strong>#KCR-0039</strong></td>
-                    <td>The Glass Garden</td>
-                    <td>Short Fiction</td>
-                    <td>4,200</td>
-                    <td>Feb 5, 2026</td>
-                    <td><span class="badge badge-review">In Review</span></td>
-                    <td class="text-muted">&mdash;</td>
-                    <td>
-                      <div class="btn-group">
-                        <a href="submission-detail.html" class="btn btn-secondary btn-sm">View</a>
-                        <a href="messages.html" class="btn btn-secondary btn-sm">&#9993;</a>
-                      </div>
-                    </td>
-                  </tr>
-                  <tr>
-                    <td><strong>#KCR-0035</strong></td>
-                    <td>Urban Solitude</td>
-                    <td>Visual Art</td>
-                    <td>&mdash;</td>
-                    <td>Jan 28, 2026</td>
-                    <td><span class="badge badge-accepted">Accepted</span></td>
-                    <td>
-                      <div class="rating" style="font-size:.9rem;">
-                        <span class="star filled">&#9733;</span>
-                        <span class="star filled">&#9733;</span>
-                        <span class="star filled">&#9733;</span>
-                        <span class="star filled">&#9733;</span>
-                        <span class="star">&#9733;</span>
-                      </div>
-                    </td>
-                    <td>
-                      <div class="btn-group">
-                        <a href="submission-detail.html" class="btn btn-secondary btn-sm">View</a>
-                        <a href="messages.html" class="btn btn-secondary btn-sm">&#9993;</a>
-                      </div>
-                    </td>
-                  </tr>
-                  <tr>
-                    <td><strong>#KCR-0031</strong></td>
-                    <td>Echoes in Concrete</td>
-                    <td>Poetry</td>
-                    <td>580</td>
-                    <td>Jan 20, 2026</td>
-                    <td><span class="badge badge-accepted">Accepted</span></td>
-                    <td>
-                      <div class="rating" style="font-size:.9rem;">
-                        <span class="star filled">&#9733;</span>
-                        <span class="star filled">&#9733;</span>
-                        <span class="star filled">&#9733;</span>
-                        <span class="star filled">&#9733;</span>
-                        <span class="star filled">&#9733;</span>
-                      </div>
-                    </td>
-                    <td>
-                      <div class="btn-group">
-                        <a href="submission-detail.html" class="btn btn-secondary btn-sm">View</a>
-                        <a href="messages.html" class="btn btn-secondary btn-sm">&#9993;</a>
-                      </div>
-                    </td>
-                  </tr>
-                  <tr>
-                    <td><strong>#KCR-0028</strong></td>
-                    <td>Midnight Trains</td>
-                    <td>Creative Non-Fiction</td>
-                    <td>3,100</td>
-                    <td>Jan 15, 2026</td>
-                    <td><span class="badge badge-rejected">Rejected</span></td>
-                    <td>
-                      <div class="rating" style="font-size:.9rem;">
-                        <span class="star filled">&#9733;</span>
-                        <span class="star filled">&#9733;</span>
-                        <span class="star">&#9733;</span>
-                        <span class="star">&#9733;</span>
-                        <span class="star">&#9733;</span>
-                      </div>
-                    </td>
-                    <td>
-                      <div class="btn-group">
-                        <a href="submission-detail.html" class="btn btn-secondary btn-sm">View</a>
-                        <a href="messages.html" class="btn btn-secondary btn-sm">&#9993;</a>
-                      </div>
-                    </td>
-                  </tr>
-                  <tr>
-                    <td><strong>#KCR-0024</strong></td>
-                    <td>Fragments of Light</td>
-                    <td>Poetry</td>
-                    <td>210</td>
-                    <td>Jan 8, 2026</td>
-                    <td><span class="badge badge-accepted">Accepted</span></td>
-                    <td>
-                      <div class="rating" style="font-size:.9rem;">
-                        <span class="star filled">&#9733;</span>
-                        <span class="star filled">&#9733;</span>
-                        <span class="star filled">&#9733;</span>
-                        <span class="star filled">&#9733;</span>
-                        <span class="star">&#9733;</span>
-                      </div>
-                    </td>
-                    <td>
-                      <div class="btn-group">
-                        <a href="submission-detail.html" class="btn btn-secondary btn-sm">View</a>
-                        <a href="messages.html" class="btn btn-secondary btn-sm">&#9993;</a>
-                      </div>
-                    </td>
-                  </tr>
-                  <tr>
-                    <td><strong>#KCR-0019</strong></td>
-                    <td>Still Waters</td>
-                    <td>Photography</td>
-                    <td>&mdash;</td>
-                    <td>Dec 20, 2025</td>
-                    <td><span class="badge badge-accepted">Accepted</span></td>
-                    <td>
-                      <div class="rating" style="font-size:.9rem;">
-                        <span class="star filled">&#9733;</span>
-                        <span class="star filled">&#9733;</span>
-                        <span class="star filled">&#9733;</span>
-                        <span class="star">&#9733;</span>
-                        <span class="star">&#9733;</span>
-                      </div>
-                    </td>
-                    <td>
-                      <div class="btn-group">
-                        <a href="submission-detail.html" class="btn btn-secondary btn-sm">View</a>
-                        <a href="messages.html" class="btn btn-secondary btn-sm">&#9993;</a>
-                      </div>
-                    </td>
-                  </tr>
-                  <tr>
-                    <td><strong>#KCR-0015</strong></td>
-                    <td>Between the Lines</td>
-                    <td>Short Fiction</td>
-                    <td>5,600</td>
-                    <td>Dec 12, 2025</td>
-                    <td><span class="badge badge-pending">Pending</span></td>
-                    <td class="text-muted">&mdash;</td>
-                    <td>
-                      <div class="btn-group">
-                        <a href="submission-detail.html" class="btn btn-secondary btn-sm">View</a>
-                        <a href="messages.html" class="btn btn-secondary btn-sm">&#9993;</a>
-                      </div>
+                    <td colspan="8" style="text-align:center;padding:2rem;" class="text-muted">
+                      Loading submissions...
                     </td>
                   </tr>
                 </tbody>
+
               </table>
             </div>
           </div>
+
           <div class="card-footer" style="display:flex;justify-content:space-between;align-items:center;">
-            <span class="text-small text-muted">Showing 8 of 8 submissions</span>
+            <span id="submissions-count" class="text-small text-muted">Loading submissions...</span>
             <div class="btn-group">
               <button class="btn btn-secondary btn-sm" disabled>Previous</button>
               <button class="btn btn-secondary btn-sm" disabled>Next</button>
             </div>
           </div>
         </div>
+
       </div>
     </div>
   </div>
 
   <script src="../js/app.js"></script>
+  <script src="../js/submissions.js"></script>
 </body>
 </html>

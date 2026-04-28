@@ -1,192 +1,105 @@
 <!DOCTYPE html>
+
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>KCR — Submission Detail</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="../css/styles.css">
 </head>
+
 <body>
-  <div class="app-layout">
+<div class="app-layout">
 
-    <!-- Sidebar -->
-    <aside class="sidebar" id="sidebar">
-      <div class="sidebar-brand">
-        <div class="logo">KCR</div>
+  <aside class="sidebar" id="sidebar">
+    <nav id="sidebarNav"></nav>
+  </aside>
+
+  <div class="main-content">
+
+```
+<header class="top-bar">
+  <span class="page-title" id="detail-page-title">
+    Loading...
+  </span>
+</header>
+
+<div class="page-content">
+
+  <div class="doc-viewer">
+
+    <!-- LEFT: FILE PREVIEW -->
+    <div class="doc-preview">
+
+      <div class="doc-preview-header">
         <div>
-          <h2>KCR Manager</h2>
-          <small>Submission Portal</small>
+          <strong id="detail-title">Loading...</strong>
+          <span id="preview-file-name"></span>
         </div>
+
+        <button id="download-file-btn" class="btn btn-secondary btn-sm">
+          Download
+        </button>
       </div>
-      <nav class="sidebar-nav" id="sidebarNav">
-        <!--Links will be filled in here by apps.js-->
-      </nav>
-      <div class="sidebar-footer">
-        <div class="avatar" id="userAvatar">U</div>
-        <div class="user-info">
-          <div class="name" id="userName">Loading...</div>
-          <div class="role" id="userRole">Loading...</div>
-        </div>
+
+      <div class="doc-preview-body" id="document-preview-body">
+        Loading preview...
       </div>
-    </aside>
 
-    <!-- Main -->
-    <div class="main-content">
-      <header class="top-bar">
-        <div style="display:flex;align-items:center;gap:1rem;">
-          <button class="hamburger" onclick="document.getElementById('sidebar').classList.toggle('open')">&#9776;</button>
-          <span class="page-title">
-            <a href="submissions.html" style="color:var(--text-muted);font-weight:500;">&larr; Back</a>
-            &nbsp; Submission #KCR-0039
-          </span>
-        </div>
-        <div class="top-bar-actions">
-          <button onclick="signOut()" class="btn btn-secondary btn-sm">Sign Out</button>
-        </div>
-      </header>
-
-      <div class="page-content">
-        <!-- Document Viewer Layout -->
-        <div class="doc-viewer">
-          <!-- Left: In-Browser Preview -->
-          <div class="doc-preview">
-            <div class="doc-preview-header">
-              <div>
-                <strong style="font-size:.9rem;">The Glass Garden</strong>
-                <span class="text-small text-muted" style="margin-left:.75rem;">the-glass-garden.pdf</span>
-              </div>
-              <div class="btn-group">
-                <button class="btn btn-secondary btn-sm">&#8722; Zoom</button>
-                <button class="btn btn-secondary btn-sm">&#43; Zoom</button>
-                <button class="btn btn-secondary btn-sm">&#128438; Download</button>
-              </div>
-            </div>
-            <div class="doc-preview-body">
-              <div style="max-width:600px;margin:0 auto;">
-                <h2 style="text-align:center;margin-bottom:2rem;font-family:Georgia,serif;">[Submission Title]</h2>
-                <p style="font-family:Georgia,serif;text-indent:2rem;">
-                  [Filler Text]
-                </p>
-                <p style="font-family:Georgia,serif;text-indent:2rem;margin-top:1rem;">
-                  [Filler Text]
-                </p>
-                <p style="font-family:Georgia,serif;text-indent:2rem;margin-top:1rem;">
-                  [Filler Text]
-                </p>
-                <p style="font-family:Georgia,serif;text-indent:2rem;margin-top:1rem;">
-                  [Filler Text]
-                </p>
-                <p style="text-align:center;color:var(--text-light);margin-top:2rem;font-style:italic;">
-                  [Document preview continues — 12 pages total]
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <!-- Right: Sidebar Info -->
-          <div class="doc-sidebar">
-            <!-- Submission Info -->
-            <div class="card">
-              <div class="card-header">
-                <h4>Submission Details</h4>
-                <span class="badge badge-review">In Review</span>
-              </div>
-              <div class="card-body">
-                <div style="display:grid;gap:.75rem;">
-                  <div>
-                    <div class="text-small text-muted">Submission ID</div>
-                    <div style="font-weight:600;">#KCR-0039</div>
-                  </div>
-                  <div>
-                    <div class="text-small text-muted">Title</div>
-                    <div style="font-weight:600;">The Glass Garden</div>
-                  </div>
-                  <div>
-                    <div class="text-small text-muted">Genre</div>
-                    <div>Short Fiction</div>
-                  </div>
-                  <div>
-                    <div class="text-small text-muted">Word Count</div>
-                    <div>4,200</div>
-                  </div>
-                  <div>
-                    <div class="text-small text-muted">Submitted</div>
-                    <div>February 5, 2026</div>
-                  </div>
-                  <div>
-                    <div class="text-small text-muted">Files</div>
-                    <div class="file-item" style="margin-top:.25rem;">
-                      <span>&#128196;</span>
-                      <span class="file-name">the-glass-garden.pdf</span>
-                      <span class="file-size">248 KB</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <!-- Rating (Reviewer view) -->
-            <div class="card" id="rating-card">
-              <div class="card-header"><h4>Your Rating</h4></div>
-              <div class="card-body">
-                <div class="rating" id="ratingStars">
-                  <span class="star" data-val="1">&#9733;</span>
-                  <span class="star" data-val="2">&#9733;</span>
-                  <span class="star" data-val="3">&#9733;</span>
-                  <span class="star" data-val="4">&#9733;</span>
-                  <span class="star" data-val="5">&#9733;</span>
-                </div>
-                <textarea class="form-control" id="review-comment" rows="3" placeholder="Add your review comments..." style="margin-top:.75rem;"></textarea>
-                <button class="btn btn-primary btn-sm" id="submit-review-btn" style="margin-top:.75rem;">Submit Review</button>
-              </div>
-            </div>
-
-            <!-- Decision (Editor/Admin) -->
-            <div class="card">
-              <div class="card-header"><h4>Decision</h4></div>
-              <div class="card-body">
-                <div class="btn-group" style="flex-wrap:wrap;">
-                  <button class="btn btn-success btn-sm" onclick="setDecision('accepted',this)">&#10004; Accept</button>
-                  <button class="btn btn-danger btn-sm" onclick="setDecision('rejected',this)">&#10006; Reject</button>
-                  <button class="btn btn-warning btn-sm" onclick="setDecision('pending',this)">&#9203; Keep Pending</button>
-                </div>
-              </div>
-            </div>
-
-            <!-- Messages Thread -->
-            <div class="card" style="flex:1;display:flex;flex-direction:column;min-height:200px;">
-              <div class="card-header">
-                <h4>Discussion</h4>
-                <a href="messages.html" class="text-small">View All</a>
-              </div>
-              <div class="card-body" style="flex:1;overflow-y:auto;">
-                <div class="message-list">
-                </div>
-              </div>
-              <div class="message-compose">
-                <input type="text" placeholder="Add a comment...">
-                <button class="btn btn-primary btn-sm">Send</button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
     </div>
+
+    <!-- RIGHT: INFO -->
+    <div class="doc-sidebar">
+
+      <div class="card">
+        <div class="card-header">
+          <h4>Submission Details</h4>
+          <span id="detail-status" class="badge">Loading...</span>
+        </div>
+
+        <div class="card-body">
+
+          <p><strong>ID:</strong> <span id="detail-id"></span></p>
+          <p><strong>Genre:</strong> <span id="detail-genre"></span></p>
+          <p><strong>Word Count:</strong> <span id="detail-word-count"></span></p>
+          <p><strong>Date:</strong> <span id="detail-date"></span></p>
+
+          <div>
+            <strong>Files:</strong>
+            <div id="detail-files"></div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- DECISION -->
+      <div class="card" id="decision-card">
+        <div class="card-header"><h4>Decision</h4></div>
+        <div class="card-body">
+          <button onclick="setDecision('accepted')" class="btn btn-success">Accept</button>
+          <button onclick="setDecision('rejected')" class="btn btn-danger">Reject</button>
+          <button onclick="setDecision('pending')" class="btn btn-warning">Pending</button>
+        </div>
+      </div>
+
+    </div>
+
   </div>
 
-  <script src="../js/app.js"></script>
-  <script src="../js/reviews.js"></script>
-  <script src="../js/messages.js"></script>
-  <script>
-    function setDecision(status, btn) {
-      const badges = { accepted: 'badge-accepted', rejected: 'badge-rejected', pending: 'badge-pending' };
-      const labels = { accepted: 'Accepted', rejected: 'Rejected', pending: 'Pending' };
-      const badge = document.querySelector('.card-header .badge');
-      badge.className = 'badge ' + badges[status];
-      badge.textContent = labels[status];
-    }
-  </script>
+</div>
+```
+
+  </div>
+</div>
+
+<script src="../js/app.js"></script>
+
+<script src="../js/submissions.js"></script>
+
+<script src="../js/reviews.js"></script>
+
+<script src="../js/messages.js"></script>
+
 </body>
 </html>
+

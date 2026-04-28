@@ -1,195 +1,118 @@
 <!DOCTYPE html>
+
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>KCR — New Submission</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="../css/styles.css">
 </head>
+
 <body>
-  <div class="app-layout">
+<div class="app-layout">
 
-    <!-- Sidebar -->
-    <aside class="sidebar" id="sidebar">
-      <div class="sidebar-brand">
-        <div class="logo">KCR</div>
-        <div>
-          <h2>KCR Manager</h2>
-          <small>Submission Portal</small>
-        </div>
-      </div>
-      <nav class="sidebar-nav" id="sidebarNav">
-        <!--Links will be filled in here by apps.js-->
-      </nav>
-      <div class="sidebar-footer">
-        <div class="avatar" id="userAvatar">U</div>
-        <div class="user-info">
-          <div class="name" id="userName">Loading...</div>
-          <div class="role" id="userRole">Loading...</div>
-        </div>
-      </div>
-    </aside>
+  <!-- Sidebar -->
 
-    <!-- Main -->
-    <div class="main-content">
-      <header class="top-bar">
-        <div style="display:flex;align-items:center;gap:1rem;">
-          <button class="hamburger" onclick="document.getElementById('sidebar').classList.toggle('open')">&#9776;</button>
-          <span class="page-title">New Submission</span>
-        </div>
-        <div class="top-bar-actions">
-          <button onclick="signOut()" class="btn btn-secondary btn-sm">Sign Out</button>
-        </div>
-      </header>
+  <aside class="sidebar" id="sidebar">
+    <nav id="sidebarNav"></nav>
+  </aside>
 
-      <div class="page-content">
-        <div class="card" style="max-width:800px;">
-          <div class="card-header">
-            <h3>Submit Your Work</h3>
-          </div>
-          <div class="card-body">
-            <form id="submissionForm" onsubmit="return handleSubmission(event)">
-              <!-- Author Info -->
-              <div class="form-row">
-                <div class="form-group">
-                  <label class="form-label">Author Name <span class="required">*</span></label>
-                  <input type="text" class="form-control" placeholder="Your full name" required>
-                </div>
-                <div class="form-group">
-                  <label class="form-label">Email <span class="required">*</span></label>
-                  <input type="email" class="form-control" placeholder="you@example.com" required>
-                </div>
-              </div>
+  <!-- Main -->
 
-              <!-- Submission Details -->
-              <div class="form-group">
-                <label class="form-label">Title <span class="required">*</span></label>
-                <input type="text" class="form-control" placeholder="Title of your work" required>
-              </div>
+  <div class="main-content">
 
-              <div class="form-row">
-                <div class="form-group">
-                  <label class="form-label">Genre <span class="required">*</span></label>
-                  <select class="form-control" required>
-                    <option value="">Select genre...</option>
-                    <option>Poetry</option>
-                    <option>Short Fiction</option>
-                    <option>Creative Non-Fiction</option>
-                    <option>Visual Art</option>
-                    <option>Photography</option>
-                    <option>Other</option>
-                  </select>
-                </div>
-                <div class="form-group">
-                  <label class="form-label">Word Count</label>
-                  <input type="number" class="form-control" placeholder="e.g. 2500" min="0">
-                  <div class="form-hint">Leave blank for visual art submissions</div>
-                </div>
-              </div>
+```
+<header class="top-bar">
+  <span class="page-title">New Submission</span>
+</header>
 
-              <div class="form-group">
-                <label class="form-label">Short Bio <span class="required">*</span></label>
-                <textarea class="form-control" rows="3" placeholder="A brief author biography (2-3 sentences)" required></textarea>
-                <div class="form-hint">This will be used if your work is accepted for publication.</div>
-              </div>
+<div class="page-content">
 
-              <div class="form-group">
-                <label class="form-label">Notes to Editors</label>
-                <textarea class="form-control" rows="2" placeholder="Any additional information (optional)"></textarea>
-              </div>
-
-              <!-- File Upload -->
-              <div class="form-group">
-                <label class="form-label">Upload Files <span class="required">*</span></label>
-                <div class="file-upload-zone" id="uploadZone">
-                  <div class="upload-icon">&#128194;</div>
-                  <p>Drag & drop your files here, or <span class="browse-link">browse</span></p>
-                  <p class="text-small text-muted" style="margin-top:.5rem;">Accepted formats: .docx, .pdf, .png, .jpg &mdash; Max 25MB per file</p>
-                  <input type="file" id="fileInput" multiple accept=".docx,.pdf,.png,.jpg,.jpeg" style="display:none;">
-                </div>
-                <div class="file-list" id="fileList"></div>
-              </div>
-
-              <!-- Upload Progress (hidden by default) -->
-              <div id="uploadProgress" style="display:none;margin-bottom:1.25rem;">
-                <div style="display:flex;justify-content:space-between;margin-bottom:.4rem;">
-                  <span class="text-small" style="font-weight:600;">Uploading files...</span>
-                  <span class="text-small text-muted" id="progressPercent">0%</span>
-                </div>
-                <div class="progress-bar">
-                  <div class="fill blue" id="progressFill" style="width:0%;"></div>
-                </div>
-              </div>
-            </form>
-          </div>
-          <div class="card-footer" style="display:flex;justify-content:space-between;">
-            <a href="dashboard.html" class="btn btn-secondary">Cancel</a>
-            <button type="submit" form="submissionForm" class="btn btn-primary">Submit for Review</button>
-          </div>
-        </div>
-      </div>
+  <div class="card" style="max-width:800px;">
+    <div class="card-header">
+      <h3>Submit Your Work</h3>
     </div>
+
+    <div class="card-body">
+
+      <form id="submissionForm">
+
+        <!-- Title -->
+        <div class="form-group">
+          <label>Title</label>
+          <input id="title" type="text" class="form-control" required>
+        </div>
+
+        <!-- Genre &  word Count -->
+        <div class="form-row">
+
+          <div class="form-group">
+            <label>Genre</label>
+            <select id="genre" class="form-control" required>
+              <option value="">Select genre</option>
+              <option>Poetry</option>
+              <option>Short Fiction</option>
+              <option>Creative Non-Fiction</option>
+              <option>Visual Art</option>
+              <option>Photography</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label>Word Count</label>
+            <input id="wordCount" type="number" class="form-control">
+          </div>
+
+        </div>
+
+        <!-- Bio -->
+        <div class="form-group">
+          <label>Bio</label>
+          <textarea id="bio" class="form-control" required></textarea>
+        </div>
+
+        <!-- Notes -->
+        <div class="form-group">
+          <label>Notes</label>
+          <textarea id="notes" class="form-control"></textarea>
+        </div>
+
+        <!-- Files -->
+        <div class="form-group">
+          <label>Upload Files</label>
+
+          <div id="uploadZone" class="file-upload-zone">
+            Click to upload
+          </div>
+
+          <!-- IMPORTANT ID CHANGE -->
+          <input id="files" type="file" multiple style="display:none;">
+
+          <div id="fileList"></div>
+        </div>
+
+      </form>
+
+    </div>
+
+    <div class="card-footer">
+      <button type="submit" form="submissionForm" class="btn btn-primary">
+        Submit
+      </button>
+    </div>
+
   </div>
 
-  <script src="../js/app.js"></script>
-  <script>
-    // File upload interaction
-    const uploadZone = document.getElementById('uploadZone');
-    const fileInput = document.getElementById('fileInput');
-    const fileList = document.getElementById('fileList');
-    let uploadedFiles = [];
+</div>
+```
 
-    uploadZone.addEventListener('click', () => fileInput.click());
-    uploadZone.addEventListener('dragover', (e) => { e.preventDefault(); uploadZone.classList.add('dragover'); });
-    uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('dragover'));
-    uploadZone.addEventListener('drop', (e) => {
-      e.preventDefault();
-      uploadZone.classList.remove('dragover');
-      addFiles(e.dataTransfer.files);
-    });
-    fileInput.addEventListener('change', () => addFiles(fileInput.files));
+  </div>
+</div>
 
-    function addFiles(files) {
-      for (const file of files) {
-        uploadedFiles.push(file);
-        const div = document.createElement('div');
-        div.className = 'file-item';
-        const ext = file.name.split('.').pop().toUpperCase();
-        div.innerHTML = `
-          <span style="font-size:1.2rem;">&#128196;</span>
-          <span class="file-name">${file.name}</span>
-          <span class="file-size">${(file.size / 1024).toFixed(1)} KB</span>
-          <span class="badge badge-info">${ext}</span>
-          <button class="file-remove" onclick="this.parentElement.remove()">&times;</button>
-        `;
-        fileList.appendChild(div);
-      }
-    }
+<script src="../js/app.js"></script>
 
-    function handleSubmission(e) {
-      e.preventDefault();
-      const prog = document.getElementById('uploadProgress');
-      const fill = document.getElementById('progressFill');
-      const pct  = document.getElementById('progressPercent');
-      prog.style.display = 'block';
-      let w = 0;
-      const interval = setInterval(() => {
-        w += Math.random() * 15;
-        if (w >= 100) {
-          w = 100;
-          clearInterval(interval);
-          setTimeout(() => {
-            alert('Submission received! Your Submission ID is #KCR-0043. A confirmation email has been sent.');
-            window.location.href = 'dashboard.html';
-          }, 400);
-        }
-        fill.style.width = w + '%';
-        pct.textContent = Math.round(w) + '%';
-      }, 200);
-      return false;
-    }
-  </script>
+<script src="../js/submissions.js"></script>
+
 </body>
 </html>
+
