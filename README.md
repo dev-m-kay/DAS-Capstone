@@ -187,10 +187,11 @@ All API routes are prefixed with `/api`. Protected routes require a `Bearer` tok
 
 | Method | Endpoint | Body | Access |
 |--------|----------|------|--------|
-| GET | `/api/reviews/mine` | — | Reviewer, Editor |
-| GET | `/api/reviews/:submissionId` | — | Logged in |
-| POST | `/api/reviews/:submissionId` | `{ rating, comment? }` | Reviewer, Editor |
-| PUT | `/api/reviews/:submissionId/:id` | `{ rating?, comment? }` | Own review only |
+| GET | `/api/reviews/mine` | — | Logged in (returns the caller's reviews) |
+| GET | `/api/reviews/queue` | — | Reviewer, Editor (assignments + own review) |
+| GET | `/api/reviews/:submissionId` | — | Logged in (with access check) |
+| POST | `/api/reviews/:submissionId` | `{ rating, comment? }` | Reviewer, Editor, Admin |
+| PUT | `/api/reviews/:id` | `{ rating?, comment? }` | Own review only |
 
 ### Messages
 
@@ -252,7 +253,7 @@ Each HTML page is paired with a JS module under `js/` that calls the backend:
 | `submissions.html` | `submissions.js` | `GET /api/submissions/mine` |
 | `submit.html` | `submissions.js` | `POST /api/submissions` (multipart) |
 | `submission-detail.html` | `submissions.js`, `reviews.js`, `messages.js` | `GET /api/submissions/:id`, `POST /api/reviews/:id`, `GET/POST /api/messages/:id` |
-| `review-queue.html` | `reviews.js` | `GET /api/reviews/mine` |
+| `review-queue.html` | `reviews.js` | `GET /api/reviews/queue` |
 | `messages.html` | `messages.js` | `GET /api/messages/threads`, Socket.IO `join_thread` / `new_message` |
 | `admin.html` | `admin.js` | `/api/admin/*` |
 
@@ -264,6 +265,6 @@ Each HTML page is paired with a JS module under `js/` that calls the backend:
 
 - Tables are created automatically on first `npm start` — no manual SQL needed.
 - The `.env` file is **required** — the server won't start without `DATABASE_URL`.
-- The JWT token is stored in `localStorage` under the key `token`; clearing it (or the **Sign Out** button) logs you out.
+- The JWT token is stored in `localStorage` under the key `authToken`; clearing it (or the **Sign Out** button) logs you out.
 - Uploaded files are stored in the `uploads/` folder and served at `/uploads/filename`.
 - Real-time messages require the Socket.IO client served at `/socket.io/socket.io.js` — already included by Express when Socket.IO is mounted.

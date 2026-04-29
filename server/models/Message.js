@@ -25,10 +25,17 @@ const messageModel = {
     },
 
     // message threads for a user / the latest message for each submission
-    // that they either submitted or are assigned to review
+    // that they either submitted or are assigned to review.
+    //
+    // We deliberately return s.submission_id (the human-readable "KCR-XXXX"
+    // code) as `submission_id` rather than the integer FK on m, because the
+    // frontend uses this value both for URL building and for Socket.IO room
+    // names (kept consistent with messageController.send).
     async getThreadsForUser(user_id) {
         const { rows } = await pool.query(
-            `SELECT m.*, u.first_name, u.last_name, u.role, s.title
+            `SELECT m.id, m.body, m.created_at, m.sender_id,
+                    u.first_name, u.last_name, u.role,
+                    s.title, s.submission_id
              FROM messages m
              JOIN users u ON m.sender_id = u.id
              JOIN submissions s ON m.submission_id = s.id

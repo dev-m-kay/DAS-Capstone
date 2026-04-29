@@ -117,6 +117,8 @@ async function requireAuth(){
 
   } catch (error){
     console.error('Auth verification failed:' ,error);
+    window.location.href = '/index.html';
+    return null;
   }
 }
 
@@ -168,8 +170,8 @@ function renderNavigationByRole(role, containerId = 'sidebarNav'){
     section: "Main",
     links:[
       {href: "dashboard.html", text: "Dashboard"},
-      {href: "submissions.html", text: "MySubmissions"},
-      {href: "submit.html", text: "New Submisssion"}
+      {href: "submissions.html", text: "My Submissions"},
+      {href: "submit.html", text: "New Submission"}
     ]
   };
   navSections.push(mainSection);

@@ -273,7 +273,7 @@ function renderThreadList(list) {
     var name = (thread.first_name || '') + ' ' + (thread.last_name || '');
     var initials = getInitials(name);
     var subId = thread.submission_id;
-    var displayId = thread.submission_id_display || '#' + subId;
+    var displayId = '#' + subId;
     var title = displayId + ' \u2014 ' + (thread.title || 'Untitled');
     var preview = name.trim() + ': ' + (thread.body || '');
     var time = formatTimestamp(thread.created_at);

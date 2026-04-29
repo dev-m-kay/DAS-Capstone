@@ -85,12 +85,15 @@ exports.getMyReviews = async (req, res) => {
     }
 };
 
-// pending review queue: submissions assigned to me that I haven't reviewed yet
+// pending review queue: submissions assigned to me, with my own review (if any)
 exports.getMyQueue = async (req, res) => {
     try {
         const { rows } = await pool.query(
             `SELECT s.*, a.assigned_at,
-                    (r.id IS NOT NULL) AS reviewed
+                    (r.id IS NOT NULL) AS reviewed,
+                    r.id AS review_id,
+                    r.rating,
+                    r.comment
              FROM assignments a
              JOIN submissions s ON s.id = a.submission_id
              LEFT JOIN reviews r

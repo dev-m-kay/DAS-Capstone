@@ -28,15 +28,19 @@ exports.send = async (req, res) => {
         });
 
         const sender = await User.findById(req.user.id);
+        // Override the integer FK with the human-readable submission_id so
+        // the frontend can use the same value for URLs and for the Socket.IO
+        // room name (see Message.getThreadsForUser).
         const enriched = {
             ...message,
+            submission_id: submission.submission_id,
             first_name: sender ? sender.first_name : null,
             last_name: sender ? sender.last_name : null,
             role: sender ? sender.role : null
         };
         const io = req.app.get('io');
         if (io) {
-            io.to(String(submission.id)).emit('new_message', enriched);
+            io.to(submission.submission_id).emit('new_message', enriched);
         }
 
         res.status(201).json(enriched);

@@ -103,7 +103,7 @@ describe('routes/messages', () => {
     });
 
     test('201 returns enriched message when allowed', async () => {
-      Submission.findBySubmissionId.mockResolvedValue({ id: 1, user_id: 4 });
+      Submission.findBySubmissionId.mockResolvedValue({ id: 1, submission_id: 'KCR-0001', user_id: 4 });
       canAccessSubmission.mockResolvedValue(true);
       Message.create.mockResolvedValue({
         id: 22, submission_id: 1, sender_id: 4, body: 'hello',

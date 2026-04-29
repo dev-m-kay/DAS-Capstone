@@ -60,7 +60,7 @@ function initReviewQueue() {
 
 async function loadAssignments() {
   try {
-    var res = await apiFetch('/api/reviews/mine');
+    var res = await apiFetch('/api/reviews/queue');
     myAssignments = await res.json();
   } catch (err) {
     console.error('Failed to load assignments:', err);
@@ -227,9 +227,9 @@ function initReviewWidget() {
   var user = getUser();
   var ratingCard = document.getElementById('rating-card');
 
-  // Only reviewer or editor can see the rating card
+  // Only reviewer / editor / admin can see the rating card
   if (ratingCard && user) {
-    if (user.role !== 'reviewer' && user.role !== 'editor') {
+    if (user.role !== 'reviewer' && user.role !== 'editor' && user.role !== 'admin') {
       ratingCard.style.display = 'none';
       return;
     }
@@ -337,8 +337,8 @@ async function submitReview() {
     var res;
 
     if (currentReview) {
-      // Update existing review
-      res = await apiFetch('/api/reviews/' + submissionId + '/' + currentReview.id, {
+      // Update existing review (PUT /api/reviews/:id)
+      res = await apiFetch('/api/reviews/' + currentReview.id, {
         method: 'PUT',
         body: JSON.stringify({ rating: rating, comment: comment })
       });

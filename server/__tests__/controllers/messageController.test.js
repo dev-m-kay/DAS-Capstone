@@ -54,7 +54,7 @@ describe('controllers/messageController', () => {
     });
 
     test('201 returns enriched message and trims the body', async () => {
-      Submission.findBySubmissionId.mockResolvedValue({ id: 1, user_id: 4 });
+      Submission.findBySubmissionId.mockResolvedValue({ id: 1, submission_id: 'KCR-0001', user_id: 4 });
       canAccessSubmission.mockResolvedValue(true);
       Message.create.mockResolvedValue({
         id: 10, submission_id: 1, sender_id: 4, body: 'hello there',
@@ -75,14 +75,15 @@ describe('controllers/messageController', () => {
       expect(res.status).toHaveBeenCalledWith(201);
       expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
         id: 10,
+        submission_id: 'KCR-0001',
         first_name: 'Sub',
         last_name: 'Mitter',
         role: 'submitter',
       }));
     });
 
-    test('emits new_message via socket.io when io is available', async () => {
-      Submission.findBySubmissionId.mockResolvedValue({ id: 1, user_id: 4 });
+    test('emits new_message to the submission_id room when io is available', async () => {
+      Submission.findBySubmissionId.mockResolvedValue({ id: 1, submission_id: 'KCR-0001', user_id: 4 });
       canAccessSubmission.mockResolvedValue(true);
       Message.create.mockResolvedValue({
         id: 10, submission_id: 1, sender_id: 4, body: 'hi',
@@ -97,8 +98,8 @@ describe('controllers/messageController', () => {
       const res = mockRes();
       await messageController.send(req, res);
 
-      expect(ioMock.to).toHaveBeenCalledWith('1');
-      expect(emit).toHaveBeenCalledWith('new_message', expect.objectContaining({ id: 10 }));
+      expect(ioMock.to).toHaveBeenCalledWith('KCR-0001');
+      expect(emit).toHaveBeenCalledWith('new_message', expect.objectContaining({ id: 10, submission_id: 'KCR-0001' }));
     });
 
     test('500 when model throws', async () => {

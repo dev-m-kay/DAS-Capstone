@@ -181,26 +181,32 @@ async function loadDashboard() {
     const res = await apiFetch('/api/submissions/mine');
     const data = await res.json();
 
-    tbody.innerHTML = data.slice(0, 5).map(sub => `
-      <tr>
-        <td><strong>#${sub.submission_id}</strong></td>
-        <td>${sub.title || 'Untitled'}</td>
-        <td>${sub.genre || '&mdash;'}</td>
-        <td>${formatDate(sub.created_at)}</td>
-        <td>${statusBadge(sub.status)}</td>
-        <td>
-          <a href="submission-detail.html?id=${encodeURIComponent(sub.submission_id)}" class="btn btn-secondary btn-sm">View</a>
-        </td>
-      </tr>
-    `).join('');
+    if (!data.length) {
+      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:2rem;" class="text-muted">No submissions yet. <a href="submit.html">Submit your first piece</a>.</td></tr>';
+    } else {
+      tbody.innerHTML = data.slice(0, 5).map(sub => `
+        <tr>
+          <td><strong>#${sub.submission_id}</strong></td>
+          <td>${sub.title || 'Untitled'}</td>
+          <td>${sub.genre || '&mdash;'}</td>
+          <td>${formatDate(sub.created_at)}</td>
+          <td>${statusBadge(sub.status)}</td>
+          <td>
+            <a href="submission-detail.html?id=${encodeURIComponent(sub.submission_id)}" class="btn btn-secondary btn-sm">View</a>
+          </td>
+        </tr>
+      `).join('');
+    }
 
     const total = document.getElementById('stat-total');
     const pending = document.getElementById('stat-pending');
     const accepted = document.getElementById('stat-accepted');
+    const rejected = document.getElementById('stat-rejected');
 
     if (total) total.textContent = data.length;
     if (pending) pending.textContent = data.filter(s => s.status === 'pending').length;
     if (accepted) accepted.textContent = data.filter(s => s.status === 'accepted').length;
+    if (rejected) rejected.textContent = data.filter(s => s.status === 'rejected').length;
 
   } catch (err) {
     console.error('Failed to load dashboard:', err);

@@ -54,28 +54,28 @@
           <div class="stat-card">
             <div class="stat-icon blue">&#128196;</div>
             <div>
-              <div class="stat-value">8</div>
+              <div class="stat-value" id="stat-total">&mdash;</div>
               <div class="stat-label">Total Submissions</div>
             </div>
           </div>
           <div class="stat-card">
             <div class="stat-icon yellow">&#9203;</div>
             <div>
-              <div class="stat-value">3</div>
+              <div class="stat-value" id="stat-pending">&mdash;</div>
               <div class="stat-label">Pending Review</div>
             </div>
           </div>
           <div class="stat-card">
             <div class="stat-icon green">&#10004;</div>
             <div>
-              <div class="stat-value">4</div>
+              <div class="stat-value" id="stat-accepted">&mdash;</div>
               <div class="stat-label">Accepted</div>
             </div>
           </div>
           <div class="stat-card">
             <div class="stat-icon red">&#10006;</div>
             <div>
-              <div class="stat-value">1</div>
+              <div class="stat-value" id="stat-rejected">&mdash;</div>
               <div class="stat-label">Rejected</div>
             </div>
           </div>
@@ -100,81 +100,14 @@
                     <th>Actions</th>
                   </tr>
                 </thead>
-                <tbody>
+                <tbody id="dashboard-tbody">
                   <tr>
-                    <td><strong>#KCR-0042</strong></td>
-                    <td>Whispers of Autumn</td>
-                    <td>Poetry</td>
-                    <td>Feb 10, 2026</td>
-                    <td><span class="badge badge-pending">Pending</span></td>
-                    <td><a href="submission-detail.html" class="btn btn-secondary btn-sm">View</a></td>
-                  </tr>
-                  <tr>
-                    <td><strong>#KCR-0039</strong></td>
-                    <td>The Glass Garden</td>
-                    <td>Short Fiction</td>
-                    <td>Feb 5, 2026</td>
-                    <td><span class="badge badge-review">In Review</span></td>
-                    <td><a href="submission-detail.html" class="btn btn-secondary btn-sm">View</a></td>
-                  </tr>
-                  <tr>
-                    <td><strong>#KCR-0035</strong></td>
-                    <td>Urban Solitude</td>
-                    <td>Visual Art</td>
-                    <td>Jan 28, 2026</td>
-                    <td><span class="badge badge-accepted">Accepted</span></td>
-                    <td><a href="submission-detail.html" class="btn btn-secondary btn-sm">View</a></td>
-                  </tr>
-                  <tr>
-                    <td><strong>#KCR-0031</strong></td>
-                    <td>Echoes in Concrete</td>
-                    <td>Poetry</td>
-                    <td>Jan 20, 2026</td>
-                    <td><span class="badge badge-accepted">Accepted</span></td>
-                    <td><a href="submission-detail.html" class="btn btn-secondary btn-sm">View</a></td>
-                  </tr>
-                  <tr>
-                    <td><strong>#KCR-0028</strong></td>
-                    <td>Midnight Trains</td>
-                    <td>Creative Non-Fiction</td>
-                    <td>Jan 15, 2026</td>
-                    <td><span class="badge badge-rejected">Rejected</span></td>
-                    <td><a href="submission-detail.html" class="btn btn-secondary btn-sm">View</a></td>
+                    <td colspan="6" style="text-align:center;padding:2rem;" class="text-muted">
+                      Loading submissions...
+                    </td>
                   </tr>
                 </tbody>
               </table>
-            </div>
-          </div>
-        </div>
-
-        <!-- Notifications -->
-        <div class="card" style="margin-top:1.5rem;">
-          <div class="card-header">
-            <h3>Recent Notifications</h3>
-          </div>
-          <div class="card-body">
-            <div style="display:flex;flex-direction:column;gap:.75rem;">
-              <div style="display:flex;align-items:flex-start;gap:.75rem;padding:.75rem;border-radius:var(--radius);background:var(--primary-light);">
-                <span style="font-size:1.2rem;">&#128172;</span>
-                <div>
-                  <div style="font-size:.875rem;font-weight:600;">New message on "The Glass Garden"</div>
-                  <div class="text-small text-muted">Editor left feedback on your submission &mdash; 2 hours ago</div>
-                </div>
-              </div>
-              <div style="display:flex;align-items:flex-start;gap:.75rem;padding:.75rem;border-radius:var(--radius);background:#dcfce7;">
-                <span style="font-size:1.2rem;">&#10004;</span>
-                <div>
-                  <div style="font-size:.875rem;font-weight:600;">"Urban Solitude" has been accepted</div>
-                  <div class="text-small text-muted">Your visual art submission was accepted for publication &mdash; 1 day ago</div>
-                </div>
-              </div>
-              <div style="display:flex;align-items:flex-start;gap:.75rem;padding:.75rem;border-radius:var(--radius);background:var(--surface-alt);">
-                <span style="font-size:1.2rem;">&#128276;</span>
-                <div>
-                  <div style="font-size:.875rem;font-weight:600;">Submission confirmation for "Whispers of Autumn"</div>
-                  <div class="text-small text-muted">Your submission was received successfully &mdash; 7 days ago</div>
-                </div>
-              </div>
             </div>
           </div>
         </div>
@@ -183,5 +116,6 @@
   </div>
 
   <script src="../js/app.js"></script>
+  <script src="../js/submissions.js"></script>
 </body>
 </html>
