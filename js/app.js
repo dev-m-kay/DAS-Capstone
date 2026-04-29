@@ -3,10 +3,22 @@
    ============================================ */
 
 
+
+/**
+ * gets the users authentication token from local storage
+ *
+ * @returns {*} authToken 
+ */
 function getToken() {
   return localStorage.getItem('authToken');
 }
 
+
+/**
+ * Sets authentication token to local storage
+ *
+ * @param {*} token 
+ */
 function setToken(token) {
   if (token) {
     localStorage.setItem('authToken', token);
@@ -15,6 +27,12 @@ function setToken(token) {
   }
 }
 
+
+/**
+ * Gets user object from local storage
+ *
+ * @returns {*} 
+ */
 function getUser(){
   const userStr = localStorage.getItem('user');
   if(userStr) {
@@ -36,12 +54,14 @@ function setUser (user){
 }
 
 
+/** Signs user out, removing authtoken and user data from local storage */
 function signOut(){
   console.log('Signing out...');
   localStorage.removeItem('authToken');
   localStorage.removeItem('user');
   window.location.href = 'index.html';
 }
+
 
 async function apiFetch(url, options = {}){
   const token = getToken();
