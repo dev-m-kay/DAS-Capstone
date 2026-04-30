@@ -166,7 +166,7 @@ async function requireAuth(){
  *Display User's full name in UI elements with class "user-name"
  *
  * @param {*} user user object containing first_name, last_name, and email
- * @return {*} 
+ * @return {*} return if no user object
  */
 function displayUserName(user){
   if (!user) return;
