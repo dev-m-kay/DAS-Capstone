@@ -3,10 +3,22 @@
    ============================================ */
 
 
+
+/**
+ * gets the users authentication token from local storage
+ *
+ * @returns {*} authToken 
+ */
 function getToken() {
   return localStorage.getItem('authToken');
 }
 
+
+/**
+ * Sets authentication token to local storage
+ *
+ * @param {*} token 
+ */
 function setToken(token) {
   if (token) {
     localStorage.setItem('authToken', token);
@@ -15,6 +27,12 @@ function setToken(token) {
   }
 }
 
+
+/**
+ * Gets user object from local storage
+ *
+ * @returns {*} 
+ */
 function getUser(){
   const userStr = localStorage.getItem('user');
   if(userStr) {
@@ -27,6 +45,12 @@ function getUser(){
   return null;
 }
 
+
+/**
+ * Sets user to local storage
+ *
+ * @param {*} user 
+ */
 function setUser (user){
   if (user){
     localStorage.setItem('user', JSON.stringify(user));
@@ -36,6 +60,7 @@ function setUser (user){
 }
 
 
+/** Signs user out, removing authtoken and user data from local storage */
 function signOut(){
   console.log('Signing out...');
   localStorage.removeItem('authToken');
@@ -43,6 +68,16 @@ function signOut(){
   window.location.href = 'index.html';
 }
 
+
+
+/**
+ * Wrapper for fetch API, adds auth headers and handles 401 errors
+ *
+ * @async
+ * @param {*} url Endpoint to call
+ * @param {{}} [options={}] Standard fetch options
+ * @returns {unknown} response object
+ */
 async function apiFetch(url, options = {}){
   const token = getToken();
   const headers = {
@@ -74,6 +109,13 @@ async function apiFetch(url, options = {}){
   }
 }
 
+
+/**
+ * Validates User authentication and validates token with server.
+ *
+ * @async
+ * @returns {unknown} User data if authenticated, otherwise returns null.
+ */
 async function requireAuth(){
   const token = getToken();
 
@@ -122,6 +164,12 @@ async function requireAuth(){
   }
 }
 
+/**
+ *Display User's full name in UI elements with class "user-name"
+ *
+ * @param {*} user user object containing first_name, last_name, and email
+ * @return {*} return if no user object
+ */
 function displayUserName(user){
   if (!user) return;
 
@@ -144,6 +192,12 @@ function displayUserName(user){
   }
 }
 
+/**
+ *Show user's role in elements with class "user-role"
+ *
+ * @param {*} user User object with role property
+ * @return {*} 
+ */
 function displayUserRole(user){
   if (!user || !user.role) return;
 
@@ -160,6 +214,13 @@ function displayUserRole(user){
   }
 }
 
+
+/**
+ * Build dynamic navigation based on user's role
+ *
+ * @param {*} role User's role
+ * @param {string} [containerId='sidebarNav'] HTML element where navigation will be inserted
+ */
 function renderNavigationByRole(role, containerId = 'sidebarNav'){
   const navContainer = document.getElementById(containerId);
   if(!navContainer) return;
@@ -218,6 +279,12 @@ function renderNavigationByRole(role, containerId = 'sidebarNav'){
 
 }
 
+
+/**
+ * Complete Sidebar initialization
+ *
+ * @param {*} user User object with name, role, etc.
+ */
 function populateSidebar(user){
   if (!user) return;
 
@@ -239,6 +306,7 @@ window.renderNavigationByRole = renderNavigationByRole;
 window.populateSidebar = populateSidebar;
 window.displayUserName = displayUserName;
 window.displayUserRole = displayUserRole;
+
 
 document.addEventListener('DOMContentLoaded', async () => {
 

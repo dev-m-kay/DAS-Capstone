@@ -7,3 +7,8 @@ kcr.db-shm
 uploads/*
 !uploads/.gitkeep
 coverage/
+js/out/
+server/controllers/out/
+server/middleware/out/
+server/models/out/
+server/routes/out/
