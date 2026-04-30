@@ -1,7 +1,28 @@
+/**
+ * @file Admin controller — backs every endpoint mounted under `/api/admin`.
+ *
+ * Every handler in this file assumes the request has already passed through
+ * `authenticate` + `authorize('admin')` (see `server/routes/admin.js`), so
+ * we do not re-check permissions here.
+ *
+ * Handlers are written in the standard Express `(req, res) => { ... }` style
+ * and respond with JSON. On unexpected errors they log and return a generic
+ * `500 { error: 'Something went wrong' }`.
+ */
+
 const { pool } = require('../config/db');
 const User = require('../models/User');
 const Submission = require('../models/Submission');
 
+/**
+ * `GET /api/admin/users` — Returns every user in the system (without
+ * password hashes; see `User.findAll`).
+ *
+ * @async
+ * @param {import('express').Request}  req
+ * @param {import('express').Response} res
+ * @returns {Promise<void>}
+ */
 exports.getAllUsers = async (req, res) => {
   try {
     const users = await User.findAll();
@@ -12,6 +33,17 @@ exports.getAllUsers = async (req, res) => {
   }
 };
 
+/**
+ * `PUT /api/admin/users/:id/role` — Updates a single user's role.
+ *
+ * @async
+ * @param {import('express').Request}  req
+ * @param {string} req.params.id     Target user id.
+ * @param {Object} req.body
+ * @param {('admin'|'editor'|'reviewer'|'submitter')} req.body.role  New role.
+ * @param {import('express').Response} res
+ * @returns {Promise<void>} `400` on invalid role, `404` if user not found.
+ */
 exports.updateUserRole = async (req, res) => {
   try {
     const { role } = req.body;
@@ -31,6 +63,18 @@ exports.updateUserRole = async (req, res) => {
   }
 };
 
+/**
+ * `DELETE /api/admin/users/:id` — Removes a user.
+ *
+ * Refuses self-deletion to prevent an admin from accidentally locking
+ * themselves out of the system.
+ *
+ * @async
+ * @param {import('express').Request}  req
+ * @param {string} req.params.id  Target user id.
+ * @param {import('express').Response} res
+ * @returns {Promise<void>} `400` on self-delete attempt, `404` if not found.
+ */
 exports.deleteUser = async (req, res) => {
   try {
     const user = await User.findById(req.params.id);
@@ -47,6 +91,21 @@ exports.deleteUser = async (req, res) => {
   }
 };
 
+/**
+ * `POST /api/admin/assign` — Assigns a reviewer (or editor) to a submission.
+ *
+ * If the submission is currently `pending`, also bumps its status to
+ * `in_review` so it appears on the reviewer's queue.
+ *
+ * @async
+ * @param {import('express').Request}  req
+ * @param {Object} req.body
+ * @param {string} req.body.submission_id  Public submission id (e.g. "KCR-0001").
+ * @param {number} req.body.reviewer_id    Numeric user id of the reviewer.
+ * @param {import('express').Response} res
+ * @returns {Promise<void>} `400` if the user is not a reviewer/editor,
+ *   `404` if the submission is missing, `409` if already assigned.
+ */
 exports.assignReviewer = async (req, res) => {
   try {
     const { submission_id, reviewer_id } = req.body;
@@ -80,6 +139,17 @@ exports.assignReviewer = async (req, res) => {
   }
 };
 
+/**
+ * `DELETE /api/admin/assign/:submissionId/:reviewerId` — Removes a single
+ * reviewer assignment.
+ *
+ * @async
+ * @param {import('express').Request}  req
+ * @param {string} req.params.submissionId  Public submission id.
+ * @param {string} req.params.reviewerId    Numeric reviewer user id.
+ * @param {import('express').Response} res
+ * @returns {Promise<void>} `404` if the submission or assignment is missing.
+ */
 exports.removeAssignment = async (req, res) => {
   try {
     const submission = await Submission.findBySubmissionId(req.params.submissionId);
@@ -102,6 +172,19 @@ exports.removeAssignment = async (req, res) => {
   }
 };
 
+/**
+ * `GET /api/admin/workload` — Returns every reviewer/editor with the number
+ * of submissions currently assigned to them, ordered by busiest first.
+ *
+ * Used by the Admin "Reviewer Assignments" tab and the Assign Reviewer modal
+ * (which displays each reviewer's current load alongside the checkbox).
+ *
+ * @async
+ * @param {import('express').Request}  req
+ * @param {import('express').Response} res
+ * @returns {Promise<void>} JSON array of
+ *   `{ id, first_name, last_name, email, assigned_count }`.
+ */
 exports.getReviewerWorkload = async (req, res) => {
   try {
     const { rows } = await pool.query(`
@@ -120,6 +203,19 @@ exports.getReviewerWorkload = async (req, res) => {
   }
 };
 
+/**
+ * `PUT /api/admin/submissions/bulk-status` — Updates the status of multiple
+ * submissions in one query (used by the "Bulk Status Update" admin action).
+ *
+ * @async
+ * @param {import('express').Request}  req
+ * @param {Object}   req.body
+ * @param {string[]} req.body.submission_ids  Public submission ids to update.
+ * @param {('pending'|'in_review'|'accepted'|'rejected')} req.body.status
+ * @param {import('express').Response} res
+ * @returns {Promise<void>} `400` if `submission_ids` is empty or status is
+ *   not one of the four allowed values.
+ */
 exports.bulkUpdateStatus = async (req, res) => {
   try {
     const { submission_ids, status } = req.body;
@@ -145,6 +241,20 @@ exports.bulkUpdateStatus = async (req, res) => {
   }
 };
 
+/**
+ * `GET /api/admin/export` — Returns a snapshot of every submission joined
+ * with its author and aggregated review stats.
+ *
+ * Used both by the Admin Export modal (download a JSON dump) and by the
+ * Admin Submissions table (it renders directly from this payload).
+ *
+ * @async
+ * @param {import('express').Request}  req
+ * @param {import('express').Response} res
+ * @returns {Promise<void>} JSON `{ exported_at, count, submissions: [...] }`.
+ *   Each submission row includes `author_name`, `author_email`, `avg_rating`,
+ *   and `review_count`.
+ */
 exports.exportData = async (req, res) => {
   try {
     const { rows } = await pool.query(`

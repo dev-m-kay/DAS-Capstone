@@ -1,11 +1,33 @@
-/* ============================================
-   KCR Admin Panel — API Integration
-   ============================================ */
+/**
+ * @file Admin Panel client for the KCR Submission Manager.
+ *
+ * Powers `html/admin.html`: lists submissions, manages users, assigns
+ * reviewers, performs bulk status changes, and exports data. All data calls
+ * go through {@link apiFetch} which prefixes endpoints with `/api/admin`,
+ * forwards the JWT bearer token, and surfaces error messages via `alert()`.
+ *
+ * Requires `js/app.js` to be loaded first (provides `getToken`,
+ * `window.apiFetch`).
+ */
 
+/** @constant {string} Base path for all admin API endpoints. */
 const API = '/api/admin';
 
+/** Shared `apiFetch` from `js/app.js` (handles auth header and 401 redirect). */
 const sharedApiFetch = window.apiFetch;
 
+/**
+ * Admin-scoped wrapper around the shared `apiFetch`.
+ *
+ * Prefixes the endpoint with {@link API}, redirects to login when no token is
+ * present, alerts the server-supplied error message on non-2xx responses,
+ * and returns the parsed JSON body (or `null` on failure).
+ *
+ * @async
+ * @param {string} endpoint  Path relative to `/api/admin` (must start with `/`).
+ * @param {RequestInit} [options={}]  Standard `fetch` options (method, body, headers).
+ * @returns {Promise<Object|null>} Parsed JSON on success; `null` on auth/network/server error.
+ */
 const apiFetch = async (endpoint, options = {}) => {
   if (!getToken()) {
     window.location.href = 'index.html';
@@ -29,40 +51,88 @@ const apiFetch = async (endpoint, options = {}) => {
 
 // ---- Helpers ----
 
+/** @constant {string[]} Palette used to color user avatars; index = `userId % length`. */
 const AVATAR_COLORS = [
   'var(--primary)', 'var(--success)', 'var(--danger)', '#7c3aed',
   'var(--warning)', '#0ea5e9', '#ec4899', '#14b8a6',
 ];
 
+/**
+ * Picks a stable avatar color for a user based on their numeric id.
+ *
+ * @param {number} id  User id.
+ * @returns {string} CSS color value from {@link AVATAR_COLORS}.
+ */
 function avatarColor(id) {
   return AVATAR_COLORS[id % AVATAR_COLORS.length];
 }
 
+/**
+ * Builds initials (e.g. "JD") from a user's first and last name.
+ *
+ * @param {string} [firstName]
+ * @param {string} [lastName]
+ * @returns {string} Uppercased two-letter initials (may be empty).
+ */
 function getInitials(firstName, lastName) {
   return ((firstName?.[0] || '') + (lastName?.[0] || '')).toUpperCase();
 }
 
+/**
+ * Renders a colored status pill for a submission.
+ *
+ * @param {('pending'|'in_review'|'accepted'|'rejected')} status
+ * @returns {string} HTML for a `<span class="badge …">` element.
+ */
 function statusBadge(status) {
   const map   = { pending: 'badge-pending', in_review: 'badge-review', accepted: 'badge-accepted', rejected: 'badge-rejected' };
   const label = { pending: 'Pending', in_review: 'In Review', accepted: 'Accepted', rejected: 'Rejected' };
   return `<span class="badge ${map[status] || 'badge-pending'}">${label[status] || status}</span>`;
 }
 
+/**
+ * Maps a user role to the CSS class for its badge.
+ *
+ * @param {('admin'|'editor'|'reviewer'|'submitter')} role
+ * @returns {string} Badge CSS class name.
+ */
 function roleBadgeClass(role) {
   return { admin: 'badge-rejected', editor: 'badge-review', reviewer: 'badge-info', submitter: 'badge-pending' }[role] || 'badge-pending';
 }
 
+/**
+ * Formats an ISO date string for display (e.g. "Mar 14, 2026").
+ *
+ * @param {string|null|undefined} dateStr  ISO 8601 timestamp.
+ * @returns {string} Localized short date, or an em-dash if unset.
+ */
 function formatDate(dateStr) {
   if (!dateStr) return '\u2014';
   return new Date(dateStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
+/**
+ * Escapes a value for safe interpolation inside an HTML attribute.
+ *
+ * @param {*} str  Value to escape (will be coerced to string).
+ * @returns {string} Escaped attribute-safe string.
+ */
 function escapeAttr(str) {
   return String(str).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/</g, '&lt;');
 }
 
 // ---- Tab switching ----
 
+/**
+ * Switches the visible admin tab panel.
+ *
+ * Hides every `[id^="section-"]` block, shows `#section-<name>`, and toggles
+ * `.active` on the matching tab button.
+ *
+ * @param {string} name              Suffix of the panel id to show.
+ * @param {HTMLElement} [el]         Tab button that triggered the switch.
+ * @returns {void}
+ */
 function showSection(name, el) {
   document.querySelectorAll('[id^="section-"]').forEach(s => s.style.display = 'none');
   const target = document.getElementById('section-' + name);
@@ -75,8 +145,16 @@ function showSection(name, el) {
 //  SUBMISSIONS TAB  (populated via GET /api/admin/export)
 // ================================================================
 
+/** @type {Array<Object>} Cached list of all submissions for client-side filtering. */
 let submissionsData = [];
 
+/**
+ * Loads every submission from `GET /api/admin/export`, caches the result in
+ * {@link submissionsData}, and refreshes the table + stat counters.
+ *
+ * @async
+ * @returns {Promise<void>}
+ */
 async function loadSubmissions() {
   const data = await apiFetch('/export');
   if (!data) return;
@@ -86,6 +164,12 @@ async function loadSubmissions() {
   updateStats(submissionsData);
 }
 
+/**
+ * Renders the submissions table body and updates the "Showing X of Y" count.
+ *
+ * @param {Array<Object>} list  Submissions to render (may be a filtered subset).
+ * @returns {void}
+ */
 function renderSubmissions(list) {
   const tbody = document.getElementById('submissions-tbody');
   if (!tbody) return;
@@ -121,12 +205,25 @@ function renderSubmissions(list) {
     `Showing ${list.length} of ${submissionsData.length} submissions`;
 }
 
+/**
+ * Updates the dashboard stat counters (`#stat-total`, `#stat-pending`,
+ * `#stat-accepted`).
+ *
+ * @param {Array<Object>} submissions  Full submissions list.
+ * @returns {void}
+ */
 function updateStats(submissions) {
   document.getElementById('stat-total').textContent    = submissions.length;
   document.getElementById('stat-pending').textContent  = submissions.filter(s => s.status === 'pending').length;
   document.getElementById('stat-accepted').textContent = submissions.filter(s => s.status === 'accepted').length;
 }
 
+/**
+ * Re-renders the submissions table after applying the current search query
+ * and status/genre filters to the cached {@link submissionsData}.
+ *
+ * @returns {void}
+ */
 function filterSubmissions() {
   const query  = (document.getElementById('submissions-search')?.value || '').toLowerCase();
   const status = document.getElementById('filter-status')?.value || '';
@@ -149,8 +246,16 @@ function filterSubmissions() {
 //  USER MANAGEMENT TAB
 // ================================================================
 
+/** @type {Array<Object>} Cached list of users. */
 let usersData = [];
 
+/**
+ * Loads users from `GET /api/admin/users`, caches them in {@link usersData},
+ * renders the user table, and updates the user-count stat.
+ *
+ * @async
+ * @returns {Promise<void>}
+ */
 async function loadUsers() {
   const data = await apiFetch('/users');
   if (!data) return;
@@ -160,6 +265,12 @@ async function loadUsers() {
   document.getElementById('stat-users').textContent = usersData.length;
 }
 
+/**
+ * Renders the users table body.
+ *
+ * @param {Array<Object>} list  Users to render.
+ * @returns {void}
+ */
 function renderUsers(list) {
   const tbody = document.getElementById('users-tbody');
   if (!tbody) return;
@@ -199,6 +310,12 @@ function renderUsers(list) {
 
 // ---- Edit Role ----
 
+/**
+ * Opens the Edit Role modal pre-filled with the selected user's current role.
+ *
+ * @param {number} userId  Numeric user id from {@link usersData}.
+ * @returns {void}
+ */
 function openEditRoleModal(userId) {
   const user = usersData.find(u => u.id === userId);
   if (!user) return;
@@ -209,6 +326,13 @@ function openEditRoleModal(userId) {
   document.getElementById('editRoleModal').classList.add('show');
 }
 
+/**
+ * Submits the Edit Role modal: PUTs the new role to
+ * `/api/admin/users/:id/role`, closes the modal, and reloads the users list.
+ *
+ * @async
+ * @returns {Promise<void>}
+ */
 async function saveUserRole() {
   const userId = document.getElementById('editRoleUserId').value;
   const role   = document.getElementById('editRoleSelect').value;
@@ -226,6 +350,15 @@ async function saveUserRole() {
 
 // ---- Delete User ----
 
+/**
+ * Prompts for confirmation, then deletes the user via
+ * `DELETE /api/admin/users/:id`. Reloads the users list on success.
+ *
+ * @async
+ * @param {number} userId  Id of the user to delete.
+ * @param {string} name    Display name shown in the confirmation prompt.
+ * @returns {Promise<void>}
+ */
 async function confirmDeleteUser(userId, name) {
   if (!confirm(`Are you sure you want to delete ${name}? This cannot be undone.`)) return;
 
@@ -237,8 +370,16 @@ async function confirmDeleteUser(userId, name) {
 //  REVIEWER ASSIGNMENTS TAB
 // ================================================================
 
+/** @type {Array<Object>} Cached reviewer workload (one row per reviewer/editor). */
 let workloadData = [];
 
+/**
+ * Loads reviewer workload from `GET /api/admin/workload` and renders the
+ * Assignments grid.
+ *
+ * @async
+ * @returns {Promise<void>}
+ */
 async function loadWorkload() {
   const data = await apiFetch('/workload');
   if (!data) return;
@@ -247,6 +388,13 @@ async function loadWorkload() {
   renderWorkload(data);
 }
 
+/**
+ * Renders one card per reviewer in the Assignments grid, with a colored
+ * progress bar showing their current workload (`assigned_count / 10`).
+ *
+ * @param {Array<Object>} list  Workload rows from `/api/admin/workload`.
+ * @returns {void}
+ */
 function renderWorkload(list) {
   const container = document.getElementById('assignments-grid');
   if (!container) return;
@@ -293,8 +441,16 @@ function renderWorkload(list) {
 //  ASSIGN REVIEWER MODAL
 // ================================================================
 
+/** @type {?string} Submission id the Assign-Reviewer modal is currently targeting. */
 let assignTargetSubmissionId = null;
 
+/**
+ * Opens the Assign Reviewer modal for a given submission and populates it
+ * with checkbox rows for every reviewer in {@link workloadData}.
+ *
+ * @param {string} submissionId  Public submission id (e.g. "KCR-0001").
+ * @returns {void}
+ */
 function openAssignModal(submissionId) {
   assignTargetSubmissionId = submissionId;
   document.getElementById('assignSubmissionLabel').innerHTML =
@@ -324,6 +480,14 @@ function openAssignModal(submissionId) {
   document.getElementById('assignModal').classList.add('show');
 }
 
+/**
+ * Submits the Assign Reviewer modal: POSTs one assignment per checked
+ * reviewer to `/api/admin/assign`, closes the modal, then refreshes
+ * workload and submissions.
+ *
+ * @async
+ * @returns {Promise<void>}
+ */
 async function submitAssignments() {
   const checked = document.querySelectorAll('#assignReviewerList input[type="checkbox"]:checked');
   if (checked.length === 0) {
@@ -355,6 +519,12 @@ async function submitAssignments() {
 //  BULK STATUS UPDATE
 // ================================================================
 
+/**
+ * Opens the Bulk Status modal if at least one row checkbox is selected.
+ * Updates the displayed count of affected submissions.
+ *
+ * @returns {void}
+ */
 function openBulkStatusModal() {
   const checked = document.querySelectorAll('#submissions-tbody input[type="checkbox"]:checked');
   if (checked.length === 0) {
@@ -365,6 +535,14 @@ function openBulkStatusModal() {
   document.getElementById('bulkStatusModal').classList.add('show');
 }
 
+/**
+ * Submits the Bulk Status modal: PUTs the chosen status and the array of
+ * checked submission ids to `/api/admin/submissions/bulk-status`, then
+ * reloads submissions.
+ *
+ * @async
+ * @returns {Promise<void>}
+ */
 async function submitBulkStatus() {
   const checked = document.querySelectorAll('#submissions-tbody input[type="checkbox"]:checked');
   const ids     = [...checked].map(cb => cb.value);
@@ -386,6 +564,13 @@ async function submitBulkStatus() {
 //  EXPORT DATA
 // ================================================================
 
+/**
+ * Fetches the full export from `GET /api/admin/export` and triggers a
+ * client-side download as `kcr-export-YYYY-MM-DD.json`.
+ *
+ * @async
+ * @returns {Promise<void>}
+ */
 async function submitExport() {
   const data = await apiFetch('/export');
   if (!data) return;
@@ -407,6 +592,11 @@ async function submitExport() {
 //  INIT
 // ================================================================
 
+/**
+ * Bootstraps the admin page once the DOM is ready: redirects to login if
+ * unauthenticated, kicks off initial data loads, and wires up all static
+ * (and delegated) event handlers in a CSP-friendly way (no inline `onclick`).
+ */
 document.addEventListener('DOMContentLoaded', () => {
   if (!getToken()) {
     window.location.href = 'index.html';

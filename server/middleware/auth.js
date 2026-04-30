@@ -1,3 +1,18 @@
+/**
+ * @file JWT authentication helpers.
+ *
+ * Exports:
+ *   - `authenticate`  — Express middleware that verifies a Bearer token and
+ *                       attaches the decoded payload to `req.user`.
+ *   - `generateToken` — Issues a 24-hour token for a successfully
+ *                       authenticated user.
+ *   - `JWT_SECRET`    — The runtime secret (also imported by `socket.js` for
+ *                       Socket.IO handshake auth).
+ *
+ * Fails fast at startup if `JWT_SECRET` is missing in non-test environments
+ * to avoid signing tokens with a default, source-controlled value.
+ */
+
 const jwt = require('jsonwebtoken');
 
 // Fail-fast: production / dev runs must always set a real JWT_SECRET so we
@@ -13,16 +28,19 @@ if (!process.env.JWT_SECRET) {
   }
 }
 
+/** @constant {string} Runtime JWT signing secret. */
 const JWT_SECRET = process.env.JWT_SECRET;
 
 
 /**
- * Middleware for user authentication
+ * Express middleware that requires a valid `Authorization: Bearer <jwt>`
+ * header. On success, attaches the decoded payload (`{ id, email, role }`)
+ * to `req.user` and calls `next()`.
  *
- * @param {Object} req Express request object
- * @param {Object} res Express response object
- * @param {Function} next Express next middleware function
- * @returns {void|object} Calls next() on success, returns 401 on failure. 
+ * @param {import('express').Request}  req
+ * @param {import('express').Response} res
+ * @param {import('express').NextFunction} next
+ * @returns {void} Calls `next()` on success; sends `401` JSON otherwise.
  */
 function authenticate(req, res, next) {
   const header = req.headers.authorization;
@@ -41,10 +59,17 @@ function authenticate(req, res, next) {
 
 
 /**
- * Generates a JWT token for authenticated users
+ * Generates a signed JWT for an authenticated user.
  *
- * @param {Object} user User Object containing authentication data 
- * @returns {String} JWT token valid for 24 hours
+ * The token payload is intentionally minimal — only `id`, `email`, and
+ * `role` — so we can authorize requests without re-fetching the user record
+ * on every call.
+ *
+ * @param {Object} user        Authenticated user record.
+ * @param {number} user.id     Numeric user id.
+ * @param {string} user.email  Email address.
+ * @param {string} user.role   `'admin' | 'editor' | 'reviewer' | 'submitter'`.
+ * @returns {string} JWT signed with {@link JWT_SECRET}, valid for 24 hours.
  */
 function generateToken(user) {
   return jwt.sign(

@@ -1,6 +1,25 @@
+/**
+ * @file PostgreSQL connection pool and schema bootstrap.
+ *
+ * Exposes a shared `pg.Pool` connected to the Supabase-hosted Postgres
+ * instance specified by `DATABASE_URL`, plus an `initializeDatabase()`
+ * helper that creates the application schema (tables + Row Level Security)
+ * if it does not already exist.
+ *
+ * The pool is intentionally a module-level singleton so every controller and
+ * model shares the same connection limits.
+ */
+
 const { Pool } = require('pg');
 require('dotenv').config();
 
+/**
+ * Shared connection pool. SSL is required by Supabase; we disable strict
+ * cert checking because Supabase's signed cert chain isn't always available
+ * in CI environments.
+ *
+ * @type {import('pg').Pool}
+ */
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false }
@@ -15,8 +34,15 @@ pool.query('SELECT NOW()')
   });
 
 /**
- * Creates all tables if they don't exist.
- * Called once at server startup from index.js.
+ * Creates the application schema if it does not already exist.
+ *
+ * Idempotent — uses `CREATE TABLE IF NOT EXISTS` for every table and enables
+ * Row Level Security on each. Called once at server startup from
+ * `server/index.js`.
+ *
+ * @async
+ * @returns {Promise<void>} Resolves once all DDL statements have run.
+ * @throws {Error} If the underlying `pool.query` call fails.
  */
 async function initializeDatabase() {
   await pool.query(`
