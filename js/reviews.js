@@ -30,10 +30,20 @@ function getQueryId() {
   return params.get('id');
 }
 
+function escapeHtml(str) {
+  if (str === null || str === undefined) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 function statusBadge(status) {
   var map = { pending: 'badge-pending', in_review: 'badge-review', accepted: 'badge-accepted', rejected: 'badge-rejected' };
   var label = { pending: 'Pending', in_review: 'In Review', accepted: 'Accepted', rejected: 'Rejected' };
-  return '<span class="badge ' + (map[status] || 'badge-pending') + '">' + (label[status] || status) + '</span>';
+  return '<span class="badge ' + (map[status] || 'badge-pending') + '">' + escapeHtml(label[status] || status) + '</span>';
 }
 
 
@@ -56,6 +66,13 @@ function initReviewQueue() {
   if (genreSelect) {
     genreSelect.addEventListener('change', filterReviewCards);
   }
+
+  // Wire tab buttons (data-review-tab="awaiting|reviewed|all")
+  document.querySelectorAll('[data-review-tab]').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      switchReviewTab(btn, btn.getAttribute('data-review-tab'));
+    });
+  });
 }
 
 async function loadAssignments() {
@@ -112,7 +129,7 @@ function renderReviewCards(list) {
     var item = list[i];
     var hasReview = !!item.rating;
     var submissionId = item.submission_id || item.id;
-    var subIdDisplay = item.submission_id_display || '#' + submissionId;
+    var subIdDisplay = '#' + escapeHtml(submissionId);
 
     // Determine status badge
     var badge = hasReview ? statusBadge(item.status || 'in_review') : '<span class="badge badge-pending">Awaiting Review</span>';
@@ -120,7 +137,7 @@ function renderReviewCards(list) {
     // Author visibility: hidden until accepted/rejected
     var authorLine = 'Author: <em>Hidden</em> &#128274;';
     if (item.status === 'accepted' || item.status === 'rejected') {
-      authorLine = 'Author: ' + (item.author_name || 'Unknown');
+      authorLine = 'Author: ' + escapeHtml(item.author_name || 'Unknown');
     }
 
     // Button text
@@ -128,8 +145,8 @@ function renderReviewCards(list) {
 
     // Word count display
     var metaParts = [];
-    if (item.genre) metaParts.push(item.genre);
-    if (item.word_count) metaParts.push(item.word_count.toLocaleString() + ' words');
+    if (item.genre) metaParts.push(escapeHtml(item.genre));
+    if (item.word_count) metaParts.push(escapeHtml(item.word_count.toLocaleString()) + ' words');
     if (item.created_at) metaParts.push('Submitted ' + formatDate(item.created_at));
     var metaLine = metaParts.join(' &bull; ');
 
@@ -139,6 +156,7 @@ function renderReviewCards(list) {
     card.dataset.title = (item.title || '').toLowerCase();
     card.dataset.hasReview = hasReview ? 'true' : 'false';
 
+    var hrefId = encodeURIComponent(submissionId);
     card.innerHTML =
       '<div class="card-body" style="display:flex;align-items:center;gap:1.5rem;flex-wrap:wrap;">' +
         '<div style="flex:1;min-width:200px;">' +
@@ -146,13 +164,13 @@ function renderReviewCards(list) {
             '<strong>' + subIdDisplay + '</strong>' +
             badge +
           '</div>' +
-          '<h3 style="margin-bottom:.25rem;">' + (item.title || 'Untitled') + '</h3>' +
+          '<h3 style="margin-bottom:.25rem;">' + escapeHtml(item.title || 'Untitled') + '</h3>' +
           '<div class="text-small text-muted">' + metaLine + '</div>' +
           '<div class="text-small text-muted" style="margin-top:.25rem;">' + authorLine + '</div>' +
         '</div>' +
         '<div class="btn-group">' +
-          '<a href="submission-detail.html?id=' + submissionId + '" class="btn btn-primary btn-sm">' + btnText + '</a>' +
-          '<a href="messages.html?submission=' + submissionId + '" class="btn btn-secondary btn-sm">&#9993; Discuss</a>' +
+          '<a href="submission-detail.html?id=' + hrefId + '" class="btn btn-primary btn-sm">' + btnText + '</a>' +
+          '<a href="messages.html?submission=' + hrefId + '" class="btn btn-secondary btn-sm">&#9993; Discuss</a>' +
         '</div>' +
       '</div>';
 
@@ -384,6 +402,8 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 
+// Globals are no longer needed for tab/filter wiring (CSP-friendly: handlers
+// are attached via addEventListener). Kept for backwards compatibility only.
 window.switchReviewTab = switchReviewTab;
 window.submitReview = submitReview;
 window.filterReviewCards = filterReviewCards;

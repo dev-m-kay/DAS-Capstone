@@ -36,7 +36,7 @@
     <div class="main-content">
       <header class="top-bar">
         <div style="display:flex;align-items:center;gap:1rem;">
-          <button class="hamburger" onclick="document.getElementById('sidebar').classList.toggle('open')">&#9776;</button>
+          <button class="hamburger" type="button" aria-label="Toggle navigation">&#9776;</button>
           <span class="page-title">Dashboard</span>
         </div>
         <div class="top-bar-actions">
@@ -44,7 +44,7 @@
             <button class="btn-icon" title="Notifications">&#128276;</button>
             <span class="badge-count">3</span>
           </div>
-          <button onclick="signOut()" class="btn btn-secondary btn-sm">Sign Out</button>
+          <button type="button" data-action="signout" class="btn btn-secondary btn-sm">Sign Out</button>
         </div>
       </header>
 

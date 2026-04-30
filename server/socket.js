@@ -1,12 +1,17 @@
 const { Server } = require('socket.io');
 const jwt = require('jsonwebtoken');
 const { JWT_SECRET } = require('./middleware/auth');
+const Submission = require('./models/Submission');
+const { canAccessSubmission } = require('./middleware/access');
 
-// setup
 function setupSocket(httpServer) {
+    const corsOrigin = process.env.CORS_ORIGIN
+        ? process.env.CORS_ORIGIN.split(',').map(s => s.trim()).filter(Boolean)
+        : true;
+
     const io = new Server(httpServer, {
         cors: {
-            origin: '*',
+            origin: corsOrigin,
             methods: ['GET', 'POST']
         }
     });
@@ -16,38 +21,46 @@ function setupSocket(httpServer) {
         const token = socket.handshake.auth && socket.handshake.auth.token;
         if (!token) return next(new Error('Authentication required'));
         try {
-        socket.user = jwt.verify(token, JWT_SECRET);
-        next();
+            socket.user = jwt.verify(token, JWT_SECRET);
+            next();
         } catch {
-        next(new Error('Invalid or expired token'));
+            next(new Error('Invalid or expired token'));
         }
     });
 
     io.on('connection', (socket) => {
-        // log the connected client
         const userId = socket.user && socket.user.id;
         console.log(`Socket connected: ${socket.id} (user ${userId})`);
 
-        // client joins a room named by submissionId
-        socket.on('join_thread', (submissionId) => {
+        // The room name is the submission's text code (e.g. "KCR-0001"), the
+        // same value used by messageController.send. Authorize the user
+        // against the submission before allowing them to join the room.
+        socket.on('join_thread', async (submissionId) => {
             if (!submissionId) return;
-            socket.join(String(submissionId));
-            console.log(`Client ${socket.id} joined thread ${submissionId}`);
+            try {
+                const submission = await Submission.findBySubmissionId(String(submissionId));
+                if (!submission) return;
+                if (!(await canAccessSubmission(socket.user, submission))) {
+                    socket.emit('error', { message: 'Forbidden' });
+                    return;
+                }
+                socket.join(String(submissionId));
+                console.log(`Client ${socket.id} joined thread ${submissionId}`);
+            } catch (err) {
+                console.error('join_thread auth error:', err);
+            }
         });
 
-        // client leaves the room
         socket.on('leave_thread', (submissionId) => {
             if (!submissionId) return;
             socket.leave(String(submissionId));
             console.log(`Client ${socket.id} left thread ${submissionId}`);
         });
 
-        // log handler errors
         socket.on('error', (err) => {
             console.error(`Socket ${socket.id} error:`, err);
         });
 
-        // clean up
         socket.on('disconnect', () => {
             console.log(`Client disconnected: ${socket.id}`);
         });

@@ -1,116 +1,144 @@
 <!DOCTYPE html>
-
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>KCR — New Submission</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="../css/styles.css">
+  <style>
+    .file-item { display: flex; align-items: center; gap: .75rem; padding: .5rem .75rem; border: 1px solid var(--border); border-radius: var(--radius); margin-top: .5rem; }
+    .file-item .file-name { flex: 1; font-size: .875rem; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .file-item .file-size { font-size: .75rem; color: var(--text-muted); }
+    .file-item .file-remove { background: none; border: none; color: var(--danger, #dc2626); cursor: pointer; font-size: 1rem; line-height: 1; padding: 0 .25rem; }
+    .file-item .file-remove:hover { color: #991b1b; }
+
+    .upload-progress { display: none; margin-top: 1rem; }
+    .upload-progress.show { display: block; }
+    .upload-progress-bar { height: 8px; background: var(--surface-alt); border-radius: 999px; overflow: hidden; }
+    .upload-progress-bar-fill { height: 100%; background: var(--primary); width: 0%; transition: width .15s ease; }
+    .upload-progress-text { display: flex; justify-content: space-between; font-size: .8rem; color: var(--text-muted); margin-top: .35rem; }
+  </style>
 </head>
 
 <body>
 <div class="app-layout">
 
-  <!-- Sidebar -->
-
   <aside class="sidebar" id="sidebar">
-    <nav id="sidebarNav"></nav>
+    <div class="sidebar-brand">
+      <div class="logo">KCR</div>
+      <div>
+        <h2>KCR Manager</h2>
+        <small>Submission Portal</small>
+      </div>
+    </div>
+    <nav class="sidebar-nav" id="sidebarNav"></nav>
+    <div class="sidebar-footer">
+      <div class="avatar" id="userAvatar">U</div>
+      <div class="user-info">
+        <div class="name" id="userName">Loading...</div>
+        <div class="role" id="userRole">Loading...</div>
+      </div>
+    </div>
   </aside>
-
-  <!-- Main -->
 
   <div class="main-content">
 
-<header class="top-bar">
-  <span class="page-title">New Submission</span>
-</header>
+    <header class="top-bar">
+      <div style="display:flex;align-items:center;gap:1rem;">
+        <button class="hamburger" type="button" aria-label="Toggle navigation">&#9776;</button>
+        <span class="page-title">New Submission</span>
+      </div>
+      <div class="top-bar-actions">
+        <button type="button" data-action="signout" class="btn btn-secondary btn-sm">Sign Out</button>
+      </div>
+    </header>
 
-<div class="page-content">
+    <div class="page-content">
 
-  <div class="card" style="max-width:800px;">
-    <div class="card-header">
-      <h3>Submit Your Work</h3>
+      <div class="card" style="max-width:800px;">
+        <div class="card-header">
+          <h3>Submit Your Work</h3>
+        </div>
+
+        <div class="card-body">
+
+          <form id="submissionForm">
+
+            <div class="form-group">
+              <label class="form-label">Title</label>
+              <input id="title" type="text" class="form-control" required>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Genre</label>
+                <select id="genre" class="form-control" required>
+                  <option value="">Select genre</option>
+                  <option>Poetry</option>
+                  <option>Short Fiction</option>
+                  <option>Creative Non-Fiction</option>
+                  <option>Visual Art</option>
+                  <option>Photography</option>
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label">Word Count</label>
+                <input id="wordCount" type="number" class="form-control" min="0">
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Bio</label>
+              <textarea id="bio" class="form-control" rows="3" required></textarea>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Notes</label>
+              <textarea id="notes" class="form-control" rows="3"></textarea>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Upload Files <span class="text-small text-muted">(.pdf, .docx, .png, .jpg — max 25 MB each)</span></label>
+
+              <div id="uploadZone" class="file-upload-zone">
+                Click or drag files here to upload
+              </div>
+
+              <input id="files" type="file" multiple accept=".pdf,.docx,.png,.jpg,.jpeg" style="display:none;">
+
+              <div id="fileList"></div>
+            </div>
+
+            <div class="upload-progress" id="uploadProgress">
+              <div class="upload-progress-bar"><div class="upload-progress-bar-fill" id="progressFill"></div></div>
+              <div class="upload-progress-text">
+                <span>Uploading...</span>
+                <span id="progressPercent">0%</span>
+              </div>
+            </div>
+
+          </form>
+
+        </div>
+
+        <div class="card-footer">
+          <button type="submit" form="submissionForm" id="submitBtn" class="btn btn-primary">
+            Submit
+          </button>
+        </div>
+
+      </div>
+
     </div>
-
-    <div class="card-body">
-
-      <form id="submissionForm">
-
-        <!-- Title -->
-        <div class="form-group">
-          <label>Title</label>
-          <input id="title" type="text" class="form-control" required>
-        </div>
-
-        <!-- Genre &  word Count -->
-        <div class="form-row">
-
-          <div class="form-group">
-            <label>Genre</label>
-            <select id="genre" class="form-control" required>
-              <option value="">Select genre</option>
-              <option>Poetry</option>
-              <option>Short Fiction</option>
-              <option>Creative Non-Fiction</option>
-              <option>Visual Art</option>
-              <option>Photography</option>
-            </select>
-          </div>
-
-          <div class="form-group">
-            <label>Word Count</label>
-            <input id="wordCount" type="number" class="form-control">
-          </div>
-
-        </div>
-
-        <!-- Bio -->
-        <div class="form-group">
-          <label>Bio</label>
-          <textarea id="bio" class="form-control" required></textarea>
-        </div>
-
-        <!-- Notes -->
-        <div class="form-group">
-          <label>Notes</label>
-          <textarea id="notes" class="form-control"></textarea>
-        </div>
-
-        <!-- Files -->
-        <div class="form-group">
-          <label>Upload Files</label>
-
-          <div id="uploadZone" class="file-upload-zone">
-            Click to upload
-          </div>
-
-          <!-- IMPORTANT ID CHANGE -->
-          <input id="files" type="file" multiple style="display:none;">
-
-          <div id="fileList"></div>
-        </div>
-
-      </form>
-
-    </div>
-
-    <div class="card-footer">
-      <button type="submit" form="submissionForm" class="btn btn-primary">
-        Submit
-      </button>
-    </div>
-
-  </div>
-
-</div>
 
   </div>
 </div>
 
 <script src="../js/app.js"></script>
-
 <script src="../js/submissions.js"></script>
 
 </body>
 </html>
-

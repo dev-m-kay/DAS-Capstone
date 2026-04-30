@@ -37,7 +37,7 @@
     <div class="main-content">
       <header class="top-bar">
         <div style="display:flex;align-items:center;gap:1rem;">
-          <button class="hamburger" onclick="document.getElementById('sidebar').classList.toggle('open')">&#9776;</button>
+          <button class="hamburger" type="button" aria-label="Toggle navigation">&#9776;</button>
           <span class="page-title">Review Queue</span>
         </div>
         <div class="top-bar-actions">
@@ -45,7 +45,7 @@
             <button class="btn-icon">&#128276;</button>
             <span class="badge-count">5</span>
           </div>
-          <button onclick="signOut()" class="btn btn-secondary btn-sm">Sign Out</button>
+          <button type="button" data-action="signout" class="btn btn-secondary btn-sm">Sign Out</button>
         </div>
       </header>
 
@@ -77,9 +77,9 @@
 
         <!-- Tabs -->
         <div class="tabs">
-          <button class="tab active" onclick="switchReviewTab(this,'awaiting')">Awaiting Review (0)</button>
-          <button class="tab" onclick="switchReviewTab(this,'reviewed')">Reviewed (0)</button>
-          <button class="tab" onclick="switchReviewTab(this,'all')">All Assigned (0)</button>
+          <button type="button" class="tab active" data-review-tab="awaiting">Awaiting Review (0)</button>
+          <button type="button" class="tab" data-review-tab="reviewed">Reviewed (0)</button>
+          <button type="button" class="tab" data-review-tab="all">All Assigned (0)</button>
         </div>
 
         <!-- Filters -->

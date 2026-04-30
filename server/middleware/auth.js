@@ -1,6 +1,19 @@
 const jwt = require('jsonwebtoken');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'kcr-dev-secret-change-in-production';
+// Fail-fast: production / dev runs must always set a real JWT_SECRET so we
+// never sign tokens with a value that's checked into source control. Tests
+// set a value via jest.setup.js, so this only triggers on a real boot.
+if (!process.env.JWT_SECRET) {
+  if (process.env.NODE_ENV === 'test') {
+    process.env.JWT_SECRET = 'kcr-test-secret';
+  } else {
+    throw new Error(
+      'JWT_SECRET environment variable must be set. Refusing to start with a default secret.'
+    );
+  }
+}
+
+const JWT_SECRET = process.env.JWT_SECRET;
 
 function authenticate(req, res, next) {
   const header = req.headers.authorization;

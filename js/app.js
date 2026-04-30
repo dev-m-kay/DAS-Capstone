@@ -249,22 +249,43 @@ document.addEventListener('DOMContentLoaded', async () => {
     populateSidebar(user);
   }
 
-  // --- Mobile sidebar toggle ---
-  const hamburger = document.querySelector('.hamburger');
-  const sidebar   = document.getElementById('sidebar');
-  if (hamburger && sidebar) {
-    hamburger.addEventListener('click', () => sidebar.classList.toggle('open'));
-
+  // --- Mobile sidebar toggle (CSP-friendly: no inline onclick) ---
+  const sidebar = document.getElementById('sidebar');
+  document.querySelectorAll('.hamburger').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (sidebar) sidebar.classList.toggle('open');
+    });
+  });
+  if (sidebar) {
     document.addEventListener('click', (e) => {
+      const hamburger = e.target.closest('.hamburger');
       if (
         sidebar.classList.contains('open') &&
         !sidebar.contains(e.target) &&
-        !hamburger.contains(e.target)
+        !hamburger
       ) {
         sidebar.classList.remove('open');
       }
     });
   }
+
+  // --- Generic Sign Out wiring (any element with [data-action="signout"]) ---
+  document.querySelectorAll('[data-action="signout"]').forEach(el => {
+    el.addEventListener('click', (e) => {
+      e.preventDefault();
+      signOut();
+    });
+  });
+
+  // --- Generic modal-close wiring (any element with [data-action="close-modal"]) ---
+  document.querySelectorAll('[data-action="close-modal"]').forEach(el => {
+    el.addEventListener('click', (e) => {
+      e.preventDefault();
+      const overlay = el.closest('.modal-overlay');
+      if (overlay) overlay.classList.remove('show');
+    });
+  });
 
   // --- Active nav highlighting ---
   const currentPage = window.location.pathname.split('/').pop() || 'index.html';

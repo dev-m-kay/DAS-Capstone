@@ -51,11 +51,11 @@
 
     <header class="top-bar">
       <div style="display:flex;align-items:center;gap:1rem;">
-        <button class="hamburger" onclick="document.getElementById('sidebar').classList.toggle('open')">&#9776;</button>
+        <button class="hamburger" type="button" aria-label="Toggle navigation">&#9776;</button>
         <span class="page-title" id="detail-page-title">Loading...</span>
       </div>
       <div class="top-bar-actions">
-        <button onclick="signOut()" class="btn btn-secondary btn-sm">Sign Out</button>
+        <button type="button" data-action="signout" class="btn btn-secondary btn-sm">Sign Out</button>
       </div>
     </header>
 
@@ -101,9 +101,9 @@
           <div class="card" id="decision-card">
             <div class="card-header"><h4>Decision</h4></div>
             <div class="card-body" style="display:flex;flex-wrap:wrap;gap:.5rem;">
-              <button onclick="setDecision('accepted')" class="btn btn-success btn-sm">Accept</button>
-              <button onclick="setDecision('rejected')" class="btn btn-danger btn-sm">Reject</button>
-              <button onclick="setDecision('pending')" class="btn btn-warning btn-sm">Pending</button>
+              <button type="button" data-decision="accepted" class="btn btn-success btn-sm">Accept</button>
+              <button type="button" data-decision="rejected" class="btn btn-danger btn-sm">Reject</button>
+              <button type="button" data-decision="pending" class="btn btn-warning btn-sm">Pending</button>
             </div>
           </div>
 

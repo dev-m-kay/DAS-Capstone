@@ -1,8 +1,12 @@
 jest.mock('../../models/Submission');
 jest.mock('../../middleware/access');
+jest.mock('../../config/db', () => ({
+  pool: { query: jest.fn() },
+}));
 
 const Submission = require('../../models/Submission');
 const { canAccessSubmission } = require('../../middleware/access');
+const { pool } = require('../../config/db');
 const submissionController = require('../../controllers/submissionController');
 const { mockRes } = require('../helpers/mockRes');
 
@@ -41,26 +45,34 @@ describe('controllers/submissionController', () => {
       expect(res.status).toHaveBeenCalledWith(400);
     });
 
-    test('creates a submission and returns 201', async () => {
+    test('creates a submission via the transactional helper and returns 201', async () => {
       Submission.nextSubmissionID.mockResolvedValue('KCR-0001');
-      Submission.create.mockResolvedValue({ id: 50, submission_id: 'KCR-0001' });
+      Submission.createWithFiles.mockResolvedValue({
+        submission: { id: 50, submission_id: 'KCR-0001' },
+        files: [],
+      });
 
       const req = { user: { id: 1 }, body: validBody, files: [] };
       const res = mockRes();
       await submissionController.create(req, res);
 
-      expect(Submission.create).toHaveBeenCalledWith(expect.objectContaining({
-        submission_id: 'KCR-0001',
-        user_id: 1,
-        title: 'A Tale',
-      }));
+      expect(Submission.createWithFiles).toHaveBeenCalledWith(
+        expect.objectContaining({
+          submission_id: 'KCR-0001',
+          user_id: 1,
+          title: 'A Tale',
+        }),
+        []
+      );
       expect(res.status).toHaveBeenCalledWith(201);
     });
 
-    test('persists each uploaded file', async () => {
+    test('passes uploaded files into createWithFiles', async () => {
       Submission.nextSubmissionID.mockResolvedValue('KCR-0002');
-      Submission.create.mockResolvedValue({ id: 51, submission_id: 'KCR-0002' });
-      Submission.addFile.mockResolvedValue({});
+      Submission.createWithFiles.mockResolvedValue({
+        submission: { id: 51, submission_id: 'KCR-0002' },
+        files: [],
+      });
 
       const req = {
         user: { id: 1 },
@@ -73,8 +85,79 @@ describe('controllers/submissionController', () => {
       const res = mockRes();
       await submissionController.create(req, res);
 
-      expect(Submission.addFile).toHaveBeenCalledTimes(2);
-      expect(Submission.addFile).toHaveBeenNthCalledWith(1, 51, 'a.pdf', 'a.pdf', 'application/pdf', 100);
+      expect(Submission.createWithFiles).toHaveBeenCalledWith(
+        expect.any(Object),
+        [
+          { filename: 'a.pdf', original_name: 'a.pdf', mimetype: 'application/pdf', size: 100 },
+          { filename: 'b.docx', original_name: 'b.docx', mimetype: 'application/msword', size: 200 },
+        ],
+      );
+    });
+
+    test('500 and best-effort cleanup when createWithFiles throws', async () => {
+      Submission.nextSubmissionID.mockResolvedValue('KCR-0003');
+      Submission.createWithFiles.mockRejectedValue(new Error('boom'));
+      jest.spyOn(console, 'error').mockImplementation(() => {});
+
+      const req = {
+        user: { id: 1 },
+        body: validBody,
+        files: [{ filename: 'orphan.pdf', originalname: 'orphan.pdf', mimetype: 'application/pdf', size: 1 }],
+      };
+      const res = mockRes();
+      await submissionController.create(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(500);
+    });
+  });
+
+  describe('downloadFile()', () => {
+    test('400 when filename contains path traversal', async () => {
+      Submission.findBySubmissionId.mockResolvedValue({ id: 9, user_id: 1 });
+      canAccessSubmission.mockResolvedValue(true);
+      const req = {
+        user: { id: 1 },
+        params: { id: 'KCR-0001', filename: '../etc/passwd' },
+      };
+      const res = mockRes();
+      await submissionController.downloadFile(req, res);
+      expect(res.status).toHaveBeenCalledWith(400);
+    });
+
+    test('404 when submission missing', async () => {
+      Submission.findBySubmissionId.mockResolvedValue(undefined);
+      const req = {
+        user: { id: 1 },
+        params: { id: 'KCR-9999', filename: 'x.pdf' },
+      };
+      const res = mockRes();
+      await submissionController.downloadFile(req, res);
+      expect(res.status).toHaveBeenCalledWith(404);
+    });
+
+    test('403 when user cannot access submission', async () => {
+      Submission.findBySubmissionId.mockResolvedValue({ id: 1, user_id: 99 });
+      canAccessSubmission.mockResolvedValue(false);
+      const req = {
+        user: { id: 1, role: 'submitter' },
+        params: { id: 'KCR-0001', filename: 'x.pdf' },
+      };
+      const res = mockRes();
+      await submissionController.downloadFile(req, res);
+      expect(res.status).toHaveBeenCalledWith(403);
+    });
+
+    test('404 when filename does not belong to the submission', async () => {
+      Submission.findBySubmissionId.mockResolvedValue({ id: 1, user_id: 1 });
+      canAccessSubmission.mockResolvedValue(true);
+      Submission.findFileByFilename.mockResolvedValue(undefined);
+      const req = {
+        user: { id: 1 },
+        params: { id: 'KCR-0001', filename: 'x.pdf' },
+      };
+      const res = mockRes();
+      await submissionController.downloadFile(req, res);
+      expect(res.status).toHaveBeenCalledWith(404);
     });
   });
 
@@ -131,6 +214,71 @@ describe('controllers/submissionController', () => {
       await submissionController.updateStatus(req, res);
       expect(Submission.updateStatus).toHaveBeenCalledWith(9, 'accepted');
       expect(res.json).toHaveBeenCalledWith({ id: 9, status: 'accepted' });
+    });
+  });
+
+  describe('getReviewers()', () => {
+    test('404 when submission missing', async () => {
+      Submission.findBySubmissionId.mockResolvedValue(undefined);
+      const req = { user: { id: 1, role: 'submitter' }, params: { id: 'KCR-0001' } };
+      const res = mockRes();
+      await submissionController.getReviewers(req, res);
+      expect(res.status).toHaveBeenCalledWith(404);
+    });
+
+    test('403 when caller is the submission author (anonymity)', async () => {
+      Submission.findBySubmissionId.mockResolvedValue({ id: 1, user_id: 5 });
+      pool.query.mockResolvedValue({ rows: [] });
+      const req = { user: { id: 5, role: 'submitter' }, params: { id: 'KCR-0001' } };
+      const res = mockRes();
+      await submissionController.getReviewers(req, res);
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(Submission.getAssignedReviewers).not.toHaveBeenCalled();
+    });
+
+    test('returns reviewers when caller is admin', async () => {
+      const reviewers = [{ id: 7, first_name: 'A', last_name: 'B' }];
+      Submission.findBySubmissionId.mockResolvedValue({ id: 1, user_id: 5 });
+      Submission.getAssignedReviewers.mockResolvedValue(reviewers);
+      const req = { user: { id: 99, role: 'admin' }, params: { id: 'KCR-0001' } };
+      const res = mockRes();
+      await submissionController.getReviewers(req, res);
+      expect(res.json).toHaveBeenCalledWith(reviewers);
+    });
+
+    test('returns reviewers when caller is editor', async () => {
+      const reviewers = [{ id: 7, first_name: 'A', last_name: 'B' }];
+      Submission.findBySubmissionId.mockResolvedValue({ id: 1, user_id: 5 });
+      Submission.getAssignedReviewers.mockResolvedValue(reviewers);
+      const req = { user: { id: 99, role: 'editor' }, params: { id: 'KCR-0001' } };
+      const res = mockRes();
+      await submissionController.getReviewers(req, res);
+      expect(res.json).toHaveBeenCalledWith(reviewers);
+    });
+
+    test('returns reviewers when caller is an assigned reviewer', async () => {
+      const reviewers = [{ id: 7, first_name: 'A', last_name: 'B' }];
+      Submission.findBySubmissionId.mockResolvedValue({ id: 1, user_id: 5 });
+      pool.query.mockResolvedValue({ rows: [{ '?column?': 1 }] });
+      Submission.getAssignedReviewers.mockResolvedValue(reviewers);
+      const req = { user: { id: 7, role: 'reviewer' }, params: { id: 'KCR-0001' } };
+      const res = mockRes();
+      await submissionController.getReviewers(req, res);
+      expect(pool.query).toHaveBeenCalledWith(
+        expect.stringContaining('FROM assignments'),
+        [1, 7]
+      );
+      expect(res.json).toHaveBeenCalledWith(reviewers);
+    });
+
+    test('403 when caller is a reviewer but not assigned to this submission', async () => {
+      Submission.findBySubmissionId.mockResolvedValue({ id: 1, user_id: 5 });
+      pool.query.mockResolvedValue({ rows: [] });
+      const req = { user: { id: 8, role: 'reviewer' }, params: { id: 'KCR-0001' } };
+      const res = mockRes();
+      await submissionController.getReviewers(req, res);
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(Submission.getAssignedReviewers).not.toHaveBeenCalled();
     });
   });
 });

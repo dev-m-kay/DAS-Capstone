@@ -36,12 +36,12 @@
     <div class="main-content">
       <header class="top-bar">
         <div style="display:flex;align-items:center;gap:1rem;">
-          <button class="hamburger" onclick="document.getElementById('sidebar').classList.toggle('open')">&#9776;</button>
+          <button class="hamburger" type="button" aria-label="Toggle navigation">&#9776;</button>
           <span class="page-title">Admin Panel</span>
         </div>
         <div class="top-bar-actions">
-          <button class="btn btn-secondary btn-sm" onclick="document.getElementById('exportModal').classList.add('show')">&#128190; Export Data</button>
-          <button class="btn btn-secondary btn-sm" onclick="signOut()">Sign Out</button>
+          <button class="btn btn-secondary btn-sm" type="button" data-action="open-modal" data-modal-target="exportModal">&#128190; Export Data</button>
+          <button class="btn btn-secondary btn-sm" type="button" data-action="signout">Sign Out</button>
         </div>
       </header>
 
@@ -80,9 +80,9 @@
 
         <!-- Tabs -->
         <div class="tabs">
-          <button class="tab active" onclick="showSection('submissions',this)">All Submissions</button>
-          <button class="tab" onclick="showSection('users',this)">User Management</button>
-          <button class="tab" onclick="showSection('assignments',this)">Reviewer Assignments</button>
+          <button type="button" class="tab active" data-admin-section="submissions">All Submissions</button>
+          <button type="button" class="tab" data-admin-section="users">User Management</button>
+          <button type="button" class="tab" data-admin-section="assignments">Reviewer Assignments</button>
         </div>
 
         <!-- Section: All Submissions -->
@@ -90,16 +90,16 @@
           <div class="filters-bar">
             <div class="search-input">
               <span class="search-icon">&#128269;</span>
-              <input type="text" id="submissions-search" placeholder="Search all submissions..." oninput="filterSubmissions()">
+              <input type="text" id="submissions-search" placeholder="Search all submissions...">
             </div>
-            <select class="filter-select" id="filter-status" onchange="filterSubmissions()">
+            <select class="filter-select" id="filter-status">
               <option value="">All Statuses</option>
               <option value="pending">Pending</option>
               <option value="in_review">In Review</option>
               <option value="accepted">Accepted</option>
               <option value="rejected">Rejected</option>
             </select>
-            <select class="filter-select" id="filter-genre" onchange="filterSubmissions()">
+            <select class="filter-select" id="filter-genre">
               <option value="">All Genres</option>
               <option value="Poetry">Poetry</option>
               <option value="Short Fiction">Short Fiction</option>
@@ -107,7 +107,7 @@
               <option value="Visual Art">Visual Art</option>
             </select>
             <div class="btn-group">
-              <button class="btn btn-secondary btn-sm" onclick="openBulkStatusModal()">Bulk Status Update</button>
+              <button type="button" class="btn btn-secondary btn-sm" data-action="open-bulk-status">Bulk Status Update</button>
             </div>
           </div>
 
@@ -194,15 +194,15 @@
     <div class="modal">
       <div class="modal-header">
         <h3>Assign Reviewer</h3>
-        <button class="modal-close" onclick="this.closest('.modal-overlay').classList.remove('show')">&times;</button>
+        <button type="button" class="modal-close" data-action="close-modal">&times;</button>
       </div>
       <div class="modal-body">
         <p class="text-small text-muted" style="margin-bottom:1rem;" id="assignSubmissionLabel"></p>
         <div id="assignReviewerList" style="display:flex;flex-direction:column;gap:.75rem;"></div>
       </div>
       <div class="modal-footer">
-        <button class="btn btn-secondary" onclick="this.closest('.modal-overlay').classList.remove('show')">Cancel</button>
-        <button class="btn btn-primary" onclick="submitAssignments()">Assign Selected</button>
+        <button type="button" class="btn btn-secondary" data-action="close-modal">Cancel</button>
+        <button type="button" class="btn btn-primary" data-action="submit-assignments">Assign Selected</button>
       </div>
     </div>
   </div>
@@ -212,7 +212,7 @@
     <div class="modal">
       <div class="modal-header">
         <h3>Edit User Role</h3>
-        <button class="modal-close" onclick="this.closest('.modal-overlay').classList.remove('show')">&times;</button>
+        <button type="button" class="modal-close" data-action="close-modal">&times;</button>
       </div>
       <div class="modal-body">
         <input type="hidden" id="editRoleUserId">
@@ -228,8 +228,8 @@
         </div>
       </div>
       <div class="modal-footer">
-        <button class="btn btn-secondary" onclick="this.closest('.modal-overlay').classList.remove('show')">Cancel</button>
-        <button class="btn btn-primary" onclick="saveUserRole()">Save</button>
+        <button type="button" class="btn btn-secondary" data-action="close-modal">Cancel</button>
+        <button type="button" class="btn btn-primary" data-action="save-user-role">Save</button>
       </div>
     </div>
   </div>
@@ -239,7 +239,7 @@
     <div class="modal">
       <div class="modal-header">
         <h3>Bulk Status Update</h3>
-        <button class="modal-close" onclick="this.closest('.modal-overlay').classList.remove('show')">&times;</button>
+        <button type="button" class="modal-close" data-action="close-modal">&times;</button>
       </div>
       <div class="modal-body">
         <p style="margin-bottom:1rem;">Update status for <strong id="bulkCount">0</strong> selected submission(s):</p>
@@ -254,8 +254,8 @@
         </div>
       </div>
       <div class="modal-footer">
-        <button class="btn btn-secondary" onclick="this.closest('.modal-overlay').classList.remove('show')">Cancel</button>
-        <button class="btn btn-primary" onclick="submitBulkStatus()">Update Status</button>
+        <button type="button" class="btn btn-secondary" data-action="close-modal">Cancel</button>
+        <button type="button" class="btn btn-primary" data-action="submit-bulk-status">Update Status</button>
       </div>
     </div>
   </div>
@@ -265,7 +265,7 @@
     <div class="modal">
       <div class="modal-header">
         <h3>Export Data</h3>
-        <button class="modal-close" onclick="this.closest('.modal-overlay').classList.remove('show')">&times;</button>
+        <button type="button" class="modal-close" data-action="close-modal">&times;</button>
       </div>
       <div class="modal-body">
         <p class="text-small text-muted" style="margin-bottom:1rem;">
@@ -273,8 +273,8 @@
         </p>
       </div>
       <div class="modal-footer">
-        <button class="btn btn-secondary" onclick="this.closest('.modal-overlay').classList.remove('show')">Cancel</button>
-        <button class="btn btn-primary" onclick="submitExport()">Download JSON</button>
+        <button type="button" class="btn btn-secondary" data-action="close-modal">Cancel</button>
+        <button type="button" class="btn btn-primary" data-action="submit-export">Download JSON</button>
       </div>
     </div>
   </div>

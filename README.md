@@ -49,14 +49,18 @@ Copy `.env.example` to a new file called `.env` and fill in the values:
 cp .env.example .env
 ```
 
-Your `.env` file needs two values:
+Your `.env` file needs two required values plus one optional:
 
 ```
 DATABASE_URL=postgresql://postgres.xxxxx:your-password@aws-1-us-east-1.pooler.supabase.com:5432/postgres
-JWT_SECRET=change-this-to-a-random-string
+JWT_SECRET=change-this-to-a-long-random-string
+# Optional, recommended in production:
+CORS_ORIGIN=https://kcr.example.com
 ```
 
 Get the `DATABASE_URL` from the team — it's the Supabase PostgreSQL connection string (Session mode, port 5432). The `.env` file is gitignored so credentials stay local.
+
+The server **refuses to start** without `JWT_SECRET` outside of tests. `CORS_ORIGIN` is optional; leave it unset for local dev, set it to your real domain(s) in production.
 
 ### Commands
 
@@ -179,8 +183,9 @@ All API routes are prefixed with `/api`. Protected routes require a `Bearer` tok
 | POST | `/api/submissions` | Form data: `title, genre, word_count?, bio, notes?, files[]` | Logged in |
 | GET | `/api/submissions/mine` | — | Logged in |
 | GET | `/api/submissions` | `?status=pending&genre=Poetry` | Admin, Editor |
-| GET | `/api/submissions/:id` | — | Logged in |
-| GET | `/api/submissions/:id/files` | — | Logged in |
+| GET | `/api/submissions/:id` | — | Logged in (with access check) |
+| GET | `/api/submissions/:id/files` | — | Logged in (with access check) |
+| GET | `/api/submissions/:id/files/:filename` | — | Logged in (with access check; streams the file) |
 | PUT | `/api/submissions/:id/status` | `{ status }` (pending/in_review/accepted/rejected) | Admin, Editor |
 
 ### Reviews
@@ -227,6 +232,18 @@ All API routes are prefixed with `/api`. Protected routes require a `Bearer` tok
 
 ---
 
+## Security Notes
+
+- **JWT secret:** The server refuses to start without `JWT_SECRET` set in env (tests aside). No fallback hard-coded secret.
+- **HTTP headers:** [`helmet`](https://helmetjs.github.io/) ships sensible defaults (X-Content-Type-Options, X-Frame-Options, Referrer-Policy, etc.) plus a strict Content Security Policy: `script-src 'self'` (no inline scripts or `onclick=` attributes anywhere — they were all refactored to `addEventListener` + `data-*` attributes for this), `connect-src 'self'`, `frame-ancestors 'none'`, `object-src 'none'`. `style-src` allows `'unsafe-inline'` to keep existing `style="…"` attributes working; CSS-attribute injection is much lower risk than script injection.
+- **CORS:** Restricted via the `CORS_ORIGIN` env var. Same value is honored by Socket.IO.
+- **Rate limiting:** `POST /api/auth/login` is capped at 10 attempts per IP per 15 minutes; `POST /api/auth/register` at 10 per IP per hour. Limiters are bypassed in tests (`NODE_ENV=test`).
+- **File uploads:** Filtered by both extension *and* MIME type, capped at 25 MB. Stored filenames are random and never derived from client-provided paths. Files are served only via the authenticated `GET /api/submissions/:id/files/:filename` route — never as a static directory — and path traversal in the `:filename` segment is rejected.
+- **Submission create:** The submission row and its file rows are inserted in a single transaction so a partial failure can't orphan a row. Multer-uploaded blobs are best-effort cleaned up if the DB insert fails.
+- **Socket.IO:** JWT-authenticated handshake. `join_thread` is authorized against `canAccessSubmission` so a logged-in user can't subscribe to a submission they don't have access to.
+- **XSS:** All user-supplied strings rendered to the DOM (titles, genres, author names, etc.) are HTML-escaped on the client before insertion.
+- **Reviewer anonymity:** `GET /api/submissions/:id/reviewers` is restricted to admins, editors, and reviewers actually assigned to the submission. The submission's *author* receives a `403`, so a submitter can never enumerate which reviewers are evaluating their work.
+
 ## Tech Stack
 
 | Layer | Technology |
@@ -235,8 +252,9 @@ All API routes are prefixed with `/api`. Protected routes require a `Bearer` tok
 | Backend | Node.js, Express |
 | Database | PostgreSQL on Supabase |
 | Auth | JWT (jsonwebtoken) + bcryptjs |
-| File Upload | Multer (stored in `/uploads`) |
+| File Upload | Multer (stored in `/uploads`, served via authenticated route) |
 | Real-time | Socket.IO (live message threads) |
+| Security | Helmet, express-rate-limit, restricted CORS |
 | Testing | Jest |
 
 ---
@@ -266,5 +284,5 @@ Each HTML page is paired with a JS module under `js/` that calls the backend:
 - Tables are created automatically on first `npm start` — no manual SQL needed.
 - The `.env` file is **required** — the server won't start without `DATABASE_URL`.
 - The JWT token is stored in `localStorage` under the key `authToken`; clearing it (or the **Sign Out** button) logs you out.
-- Uploaded files are stored in the `uploads/` folder and served at `/uploads/filename`.
+- Uploaded files are stored in the `uploads/` folder and served only via the authenticated route `GET /api/submissions/:id/files/:filename` (with the same access check as the submission itself). The `uploads/` folder is *not* exposed as a static directory.
 - Real-time messages require the Socket.IO client served at `/socket.io/socket.io.js` — already included by Express when Socket.IO is mounted.

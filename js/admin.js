@@ -65,9 +65,10 @@ function escapeAttr(str) {
 
 function showSection(name, el) {
   document.querySelectorAll('[id^="section-"]').forEach(s => s.style.display = 'none');
-  document.getElementById('section-' + name).style.display = '';
+  const target = document.getElementById('section-' + name);
+  if (target) target.style.display = '';
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-  el.classList.add('active');
+  if (el) el.classList.add('active');
 }
 
 // ================================================================
@@ -110,7 +111,7 @@ function renderSubmissions(list) {
         <td>
           <div class="btn-group">
             <a href="submission-detail.html?id=${encodeURIComponent(s.submission_id)}" class="btn btn-secondary btn-sm">View</a>
-            <button class="btn btn-secondary btn-sm" onclick="openAssignModal('${escapeAttr(s.submission_id)}')">Assign</button>
+            <button type="button" class="btn btn-secondary btn-sm" data-action="assign" data-submission-id="${escapeAttr(s.submission_id)}">Assign</button>
           </div>
         </td>
       </tr>`;
@@ -188,8 +189,8 @@ function renderUsers(list) {
         <td><span class="badge badge-accepted">Active</span></td>
         <td>
           <div class="btn-group">
-            <button class="btn btn-secondary btn-sm" onclick="openEditRoleModal(${u.id})">Edit</button>
-            <button class="btn btn-danger btn-sm" onclick="confirmDeleteUser(${u.id}, '${escapeAttr(name)}')">Delete</button>
+            <button type="button" class="btn btn-secondary btn-sm" data-action="edit-role" data-user-id="${u.id}">Edit</button>
+            <button type="button" class="btn btn-danger btn-sm" data-action="delete-user" data-user-id="${u.id}" data-user-name="${escapeAttr(name)}">Delete</button>
           </div>
         </td>
       </tr>`;
@@ -415,4 +416,56 @@ document.addEventListener('DOMContentLoaded', () => {
   loadSubmissions();
   loadUsers();
   loadWorkload();
+
+  // ---- Static-button wiring (CSP-friendly: no inline onclick) ----
+
+  // Tab buttons
+  document.querySelectorAll('[data-admin-section]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      showSection(btn.getAttribute('data-admin-section'), btn);
+    });
+  });
+
+  // Filter inputs
+  document.getElementById('submissions-search')?.addEventListener('input', filterSubmissions);
+  document.getElementById('filter-status')?.addEventListener('change', filterSubmissions);
+  document.getElementById('filter-genre')?.addEventListener('change', filterSubmissions);
+
+  // Modal-open / submit buttons (top bar + modals)
+  document.querySelectorAll('[data-action="open-modal"]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const id = btn.getAttribute('data-modal-target');
+      const modal = id && document.getElementById(id);
+      if (modal) modal.classList.add('show');
+    });
+  });
+  document.querySelector('[data-action="open-bulk-status"]')?.addEventListener('click', openBulkStatusModal);
+  document.querySelector('[data-action="submit-assignments"]')?.addEventListener('click', submitAssignments);
+  document.querySelector('[data-action="save-user-role"]')?.addEventListener('click', saveUserRole);
+  document.querySelector('[data-action="submit-bulk-status"]')?.addEventListener('click', submitBulkStatus);
+  document.querySelector('[data-action="submit-export"]')?.addEventListener('click', submitExport);
+
+  // ---- Delegated handlers for dynamically-rendered table rows ----
+
+  document.getElementById('submissions-tbody')?.addEventListener('click', (e) => {
+    const btn = e.target.closest('button[data-action="assign"]');
+    if (!btn) return;
+    const id = btn.getAttribute('data-submission-id');
+    if (id) openAssignModal(id);
+  });
+
+  document.getElementById('users-tbody')?.addEventListener('click', (e) => {
+    const editBtn = e.target.closest('button[data-action="edit-role"]');
+    if (editBtn) {
+      const uid = parseInt(editBtn.getAttribute('data-user-id'), 10);
+      if (Number.isInteger(uid)) openEditRoleModal(uid);
+      return;
+    }
+    const delBtn = e.target.closest('button[data-action="delete-user"]');
+    if (delBtn) {
+      const uid = parseInt(delBtn.getAttribute('data-user-id'), 10);
+      const name = delBtn.getAttribute('data-user-name') || 'this user';
+      if (Number.isInteger(uid)) confirmDeleteUser(uid, name);
+    }
+  });
 });

@@ -109,6 +109,65 @@ const submissionModel = {
     return rows;
   },
 
+  // Look up a single submission_files row by stored filename and confirm it
+  // belongs to the given submission's integer PK. Used by the authenticated
+  // file-download endpoint so a user can't fetch a file from a submission
+  // they don't have access to even if they know the random filename.
+  async findFileByFilename(submission_pk, filename) {
+    const { rows } = await pool.query(
+      `SELECT * FROM submission_files
+       WHERE submission_id = $1 AND filename = $2`,
+      [submission_pk, filename]
+    );
+    return rows[0];
+  },
+
+  // Atomic create: insert the submission row and any associated file rows in
+  // one transaction so a partial failure can't leave an orphan submission.
+  async createWithFiles(data, files) {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      const { rows: subRows } = await client.query(
+        `INSERT INTO submissions
+           (submission_id, user_id, title, genre, word_count, bio, notes, status)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending')
+         RETURNING *`,
+        [
+          data.submission_id,
+          data.user_id,
+          data.title,
+          data.genre,
+          data.word_count ?? null,
+          data.bio,
+          data.notes ?? null,
+        ]
+      );
+      const submission = subRows[0];
+
+      const insertedFiles = [];
+      for (const file of files || []) {
+        const { rows: fileRows } = await client.query(
+          `INSERT INTO submission_files
+             (submission_id, filename, original_name, mimetype, size)
+           VALUES ($1, $2, $3, $4, $5)
+           RETURNING *`,
+          [submission.id, file.filename, file.original_name, file.mimetype, file.size]
+        );
+        insertedFiles.push(fileRows[0]);
+      }
+
+      await client.query('COMMIT');
+      return { submission, files: insertedFiles };
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+  },
+
   async getAssignedReviewers(submission_id) {
     const { rows } = await pool.query(
       `SELECT u.id, u.first_name, u.last_name, u.email
