@@ -15,6 +15,15 @@ if (!process.env.JWT_SECRET) {
 
 const JWT_SECRET = process.env.JWT_SECRET;
 
+
+/**
+ * Middleware for user authentication
+ *
+ * @param {Object} req Express request object
+ * @param {Object} res Express response object
+ * @param {Function} next Express next middleware function
+ * @returns {void|object} Calls next() on success, returns 401 on failure. 
+ */
 function authenticate(req, res, next) {
   const header = req.headers.authorization;
   if (!header || !header.startsWith('Bearer ')) {
@@ -30,6 +39,13 @@ function authenticate(req, res, next) {
   }
 }
 
+
+/**
+ * Generates a JWT token for authenticated users
+ *
+ * @param {Object} user User Object containing authentication data 
+ * @returns {String} JWT token valid for 24 hours
+ */
 function generateToken(user) {
   return jwt.sign(
     { id: user.id, email: user.email, role: user.role },

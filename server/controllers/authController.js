@@ -2,6 +2,16 @@ const bcrypt = require('bcryptjs');
 const User = require('../models/User');
 const {generateToken} = require('../middleware/auth')
 
+/**
+ * Handles user login authentication
+ * @param {Object} req - Express request object
+ * @param {Object} req.body - Request body
+ * @param {string} req.body.email - User's email address
+ * @param {string} req.body.password - User's password
+ * @param {Object} res - Express response object
+ * @returns {Promise<Object>} JSON response with token and user data
+ * @throws {Error} If database error occurs
+ */
 exports.login = async (req, res)=>{
     try{
       const { email, password } = req.body;
@@ -23,6 +33,22 @@ exports.login = async (req, res)=>{
 
 };
 
+
+/**
+ * Registers a new user account with submitter role
+ * @async
+ * @param {Object} req - Express request object
+ * @param {Object} req.body - Request body containing user registration data
+ * @param {string} req.body.first_name - User's first name (required)
+ * @param {string} req.body.last_name - User's last name (required)
+ * @param {string} req.body.email - User's email address (required, must be valid format)
+ * @param {string} req.body.password - User's password (required, minimum 8 characters)
+ * @param {string} [req.body.bio] - Optional user biography
+ * @param {Object} res - Express response object
+ * @returns {Promise<Object>} JSON response with JWT token and user data (excluding password)
+ * @returns {number} res.status - HTTP status code (201 on success, 400/500 on error)
+ * @throws {Error} If database operation fails or server error occurs
+ */
 exports.register = async(req, res) =>{
   try{
   const { first_name, last_name, email, password, bio } = req.body;
@@ -63,6 +89,17 @@ exports.register = async(req, res) =>{
 }
 };
 
+/**
+ * Retrieves the authenticated user's profile information
+ * @async
+ * @param {Object} req - Express request object
+ * @param {Object} req.user - User object from authentication middleware
+ * @param {string|number} req.user.id - Authenticated user's ID
+ * @param {Object} res - Express response object
+ * @returns {Promise<Object>} JSON response with user profile data
+ * @returns {number} res.status - HTTP status code (200 on success, 404 if user not found, 500 on server error)
+ * @throws {Error} If database query fails or server error occurs
+ */
 exports.me = async(req, res) => {
     try {
     // Fetch user details using decoded token
