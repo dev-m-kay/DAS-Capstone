@@ -45,6 +45,12 @@ function getUser(){
   return null;
 }
 
+
+/**
+ * Sets user to local storage
+ *
+ * @param {*} user 
+ */
 function setUser (user){
   if (user){
     localStorage.setItem('user', JSON.stringify(user));
@@ -63,6 +69,15 @@ function signOut(){
 }
 
 
+
+/**
+ * Wrapper for fetch API, adds auth headers and handles 401 errors
+ *
+ * @async
+ * @param {*} url Endpoint to call
+ * @param {{}} [options={}] Standard fetch options
+ * @returns {unknown} response object
+ */
 async function apiFetch(url, options = {}){
   const token = getToken();
   const headers = {
@@ -94,6 +109,13 @@ async function apiFetch(url, options = {}){
   }
 }
 
+
+/**
+ * Validates User authentication and validates token with server.
+ *
+ * @async
+ * @returns {unknown} User data if authenticated, otherwise returns null.
+ */
 async function requireAuth(){
   const token = getToken();
 
@@ -140,6 +162,12 @@ async function requireAuth(){
   }
 }
 
+/**
+ *Display User's full name in UI elements with class "user-name"
+ *
+ * @param {*} user user object containing first_name, last_name, and email
+ * @return {*} 
+ */
 function displayUserName(user){
   if (!user) return;
 
@@ -162,6 +190,12 @@ function displayUserName(user){
   }
 }
 
+/**
+ *Show user's role in elements with class "user-role"
+ *
+ * @param {*} user User object with role property
+ * @return {*} 
+ */
 function displayUserRole(user){
   if (!user || !user.role) return;
 
@@ -178,6 +212,13 @@ function displayUserRole(user){
   }
 }
 
+
+/**
+ * Build dynamic navigation based on user's role
+ *
+ * @param {*} role User's role
+ * @param {string} [containerId='sidebarNav'] HTML element where navigation will be inserted
+ */
 function renderNavigationByRole(role, containerId = 'sidebarNav'){
   const navContainer = document.getElementById(containerId);
   if(!navContainer) return;
@@ -236,6 +277,12 @@ function renderNavigationByRole(role, containerId = 'sidebarNav'){
 
 }
 
+
+/**
+ * Complete Sidebar initialization
+ *
+ * @param {*} user User object with name, role, etc.
+ */
 function populateSidebar(user){
   if (!user) return;
 
@@ -257,6 +304,7 @@ window.renderNavigationByRole = renderNavigationByRole;
 window.populateSidebar = populateSidebar;
 window.displayUserName = displayUserName;
 window.displayUserRole = displayUserRole;
+
 
 document.addEventListener('DOMContentLoaded', async () => {
 
