@@ -7,3 +7,4 @@ kcr.db-shm
 uploads/*
 !uploads/.gitkeep
 coverage/
+js/out/
