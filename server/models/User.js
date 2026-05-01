@@ -88,17 +88,66 @@ const userModel = {
 
     
     /**
-     * Deletes a user by their ID
+     * Deletes a user by their id, cascading through every row that references
+     * them so the parent `users` row can actually be removed.
+     *
+     * The schema only declares `ON DELETE CASCADE` for rows whose parent is a
+     * submission (submission_files, reviews-on-submission, messages-on-submission,
+     * assignments-on-submission). Rows where the user is the *actor* — reviews
+     * they wrote, assignments where they are the reviewer, messages they sent —
+     * have no cascade, so a plain `DELETE FROM users` raises a 23503 foreign-key
+     * violation as soon as the user has any history. We clean those up
+     * explicitly inside a single transaction so the operation is all-or-nothing.
+     *
+     * The caller is responsible for unlinking any disk-resident upload files
+     * for submissions belonging to this user (see {@link findSubmissionFilesForUser}).
      *
      * @async
-     * @param {a} id User's unique identifier
-     * @returns {unknown} Array of deleted rows (empty if none deleted)
+     * @param {number|string} id  User id to remove.
+     * @returns {Promise<number>} `rowCount` for the user delete (`1` on success, `0` if not found).
      */
     async deleteById(id){
-        const {rows} = await pool.query('DELETE FROM users WHERE id = $1',
-            [id]
+        const client = await pool.connect();
+        try {
+            await client.query('BEGIN');
+            // 1. Rows where the user is the actor — no cascade in schema.
+            await client.query('DELETE FROM reviews     WHERE reviewer_id = $1', [id]);
+            await client.query('DELETE FROM assignments WHERE reviewer_id = $1', [id]);
+            await client.query('DELETE FROM messages    WHERE sender_id   = $1', [id]);
+            // 2. Submissions owned by the user. The submission_files / reviews /
+            //    messages / assignments tied to *those* submissions are removed
+            //    automatically by the schema's ON DELETE CASCADE.
+            await client.query('DELETE FROM submissions WHERE user_id     = $1', [id]);
+            // 3. Finally the user themselves.
+            const { rowCount } = await client.query('DELETE FROM users WHERE id = $1', [id]);
+            await client.query('COMMIT');
+            return rowCount;
+        } catch (err) {
+            await client.query('ROLLBACK');
+            throw err;
+        } finally {
+            client.release();
+        }
+    },
+
+    /**
+     * Returns the on-disk filename of every upload tied to any submission
+     * authored by the given user. The caller can use these to best-effort
+     * delete the files from `/uploads` once the DB rows are gone.
+     *
+     * @async
+     * @param {number|string} userId
+     * @returns {Promise<string[]>} Array of `submission_files.filename` values.
+     */
+    async findSubmissionFilesForUser(userId){
+        const { rows } = await pool.query(
+            `SELECT sf.filename
+             FROM submission_files sf
+             JOIN submissions s ON s.id = sf.submission_id
+             WHERE s.user_id = $1`,
+            [userId]
         );
-        return rows;
+        return rows.map(r => r.filename);
     },
 
 

@@ -3,48 +3,63 @@
  *
  * Powers `html/admin.html`: lists submissions, manages users, assigns
  * reviewers, performs bulk status changes, and exports data. All data calls
- * go through {@link apiFetch} which prefixes endpoints with `/api/admin`,
- * forwards the JWT bearer token, and surfaces error messages via `alert()`.
+ * go through {@link adminFetch} which prefixes endpoints with `/api/admin`
+ * and surfaces non-2xx responses inline via a `{ __error, message }` shape.
  *
- * Requires `js/app.js` to be loaded first (provides `getToken`,
+ * Requires `js/app.js` to be loaded first (provides `getToken` and
  * `window.apiFetch`).
  */
 
 /** @constant {string} Base path for all admin API endpoints. */
 const API = '/api/admin';
 
-/** Shared `apiFetch` from `js/app.js` (handles auth header and 401 redirect). */
-const sharedApiFetch = window.apiFetch;
-
 /**
- * Admin-scoped wrapper around the shared `apiFetch`.
+ * Admin-scoped wrapper around the shared `apiFetch` (defined in `app.js` and
+ * exposed on `window`).
+ *
+ * IMPORTANT: this is named `adminFetch` (not `apiFetch`) on purpose — both
+ * files load as classic scripts into the same global scope, and `app.js`
+ * already declares `apiFetch` at module top level. Redeclaring `apiFetch`
+ * here with `const` would be a global-scope `SyntaxError` and abort *every*
+ * statement in this file (including the `DOMContentLoaded` listener that
+ * wires the page up).
+ *
+ * The shared fetch is looked up at *call* time rather than at module-load
+ * time so script-evaluation order can never leave us with a stale `undefined`
+ * reference.
  *
  * Prefixes the endpoint with {@link API}, redirects to login when no token is
- * present, alerts the server-supplied error message on non-2xx responses,
- * and returns the parsed JSON body (or `null` on failure).
+ * present, returns `{ __error: true, message }` on non-2xx responses (so
+ * callers can surface the error inline), and returns the parsed JSON body on
+ * success.
  *
  * @async
  * @param {string} endpoint  Path relative to `/api/admin` (must start with `/`).
  * @param {RequestInit} [options={}]  Standard `fetch` options (method, body, headers).
- * @returns {Promise<Object|null>} Parsed JSON on success; `null` on auth/network/server error.
+ * @returns {Promise<Object>} Parsed JSON on success; otherwise `{ __error: true, message }`.
  */
-const apiFetch = async (endpoint, options = {}) => {
+const adminFetch = async (endpoint, options = {}) => {
   if (!getToken()) {
     window.location.href = 'index.html';
-    return null;
+    return { __error: true, message: 'Not signed in' };
+  }
+  if (typeof window.apiFetch !== 'function') {
+    console.error('[admin] window.apiFetch is missing — js/app.js failed to load?');
+    return { __error: true, message: 'app.js failed to load' };
   }
 
   let res;
   try {
-    res = await sharedApiFetch(`${API}${endpoint}`, options);
+    res = await window.apiFetch(`${API}${endpoint}`, options);
   } catch (err) {
-    return null;
+    console.error(`[admin] network error calling ${API}${endpoint}:`, err);
+    return { __error: true, message: err.message || 'Network error' };
   }
 
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    alert(data.error || 'Something went wrong');
-    return null;
+    console.error(`[admin] ${API}${endpoint} returned ${res.status}:`, data);
+    return { __error: true, message: data.error || `HTTP ${res.status}` };
   }
   return data;
 };
@@ -156,7 +171,16 @@ let submissionsData = [];
  * @returns {Promise<void>}
  */
 async function loadSubmissions() {
-  const data = await apiFetch('/export');
+  const tbody = document.getElementById('submissions-tbody');
+  const data = await adminFetch('/export');
+  if (data && data.__error) {
+    if (tbody) {
+      tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;padding:2rem;color:var(--danger);">Failed to load submissions: ${escapeAttr(data.message)}</td></tr>`;
+    }
+    const count = document.getElementById('submissions-count');
+    if (count) count.textContent = 'Error';
+    return;
+  }
   if (!data) return;
 
   submissionsData = data.submissions || [];
@@ -257,10 +281,17 @@ let usersData = [];
  * @returns {Promise<void>}
  */
 async function loadUsers() {
-  const data = await apiFetch('/users');
+  const tbody = document.getElementById('users-tbody');
+  const data = await adminFetch('/users');
+  if (data && data.__error) {
+    if (tbody) {
+      tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;padding:2rem;color:var(--danger);">Failed to load users: ${escapeAttr(data.message)}</td></tr>`;
+    }
+    return;
+  }
   if (!data) return;
 
-  usersData = data;
+  usersData = Array.isArray(data) ? data : [];
   renderUsers(usersData);
   document.getElementById('stat-users').textContent = usersData.length;
 }
@@ -337,15 +368,17 @@ async function saveUserRole() {
   const userId = document.getElementById('editRoleUserId').value;
   const role   = document.getElementById('editRoleSelect').value;
 
-  const result = await apiFetch(`/users/${userId}/role`, {
+  const result = await adminFetch(`/users/${userId}/role`, {
     method: 'PUT',
     body: JSON.stringify({ role }),
   });
 
-  if (result) {
-    document.getElementById('editRoleModal').classList.remove('show');
-    loadUsers();
+  if (!result || result.__error) {
+    if (result && result.__error) alert(result.message);
+    return;
   }
+  document.getElementById('editRoleModal').classList.remove('show');
+  loadUsers();
 }
 
 // ---- Delete User ----
@@ -360,9 +393,21 @@ async function saveUserRole() {
  * @returns {Promise<void>}
  */
 async function confirmDeleteUser(userId, name) {
-  if (!confirm(`Are you sure you want to delete ${name}? This cannot be undone.`)) return;
+  const warning =
+    `Delete ${name}?\n\n` +
+    'This will also permanently remove every record tied to this account:\n' +
+    '  • their submissions (and uploaded files)\n' +
+    '  • reviews they have written\n' +
+    '  • messages they have sent\n' +
+    '  • reviewer assignments\n\n' +
+    'This cannot be undone.';
+  if (!confirm(warning)) return;
 
-  const result = await apiFetch(`/users/${userId}`, { method: 'DELETE' });
+  const result = await adminFetch(`/users/${userId}`, { method: 'DELETE' });
+  if (result && result.__error) {
+    alert(result.message);
+    return;
+  }
   if (result) loadUsers();
 }
 
@@ -381,11 +426,18 @@ let workloadData = [];
  * @returns {Promise<void>}
  */
 async function loadWorkload() {
-  const data = await apiFetch('/workload');
+  const grid = document.getElementById('assignments-grid');
+  const data = await adminFetch('/workload');
+  if (data && data.__error) {
+    if (grid) {
+      grid.innerHTML = `<p class="text-muted" style="padding:2rem;text-align:center;color:var(--danger);">Failed to load reviewers: ${escapeAttr(data.message)}</p>`;
+    }
+    return;
+  }
   if (!data) return;
 
-  workloadData = data;
-  renderWorkload(data);
+  workloadData = Array.isArray(data) ? data : [];
+  renderWorkload(workloadData);
 }
 
 /**
@@ -496,22 +548,31 @@ async function submitAssignments() {
   }
 
   let successCount = 0;
+  const errors = [];
   for (const cb of checked) {
-    const result = await apiFetch('/assign', {
+    const result = await adminFetch('/assign', {
       method: 'POST',
       body: JSON.stringify({
         submission_id: assignTargetSubmissionId,
         reviewer_id: parseInt(cb.value, 10),
       }),
     });
-    if (result) successCount++;
+    if (result && !result.__error) {
+      successCount++;
+    } else if (result && result.__error) {
+      errors.push(result.message);
+    }
   }
 
   document.getElementById('assignModal').classList.remove('show');
   if (successCount > 0) {
-    alert(`${successCount} reviewer(s) assigned successfully`);
+    let msg = `${successCount} reviewer(s) assigned successfully`;
+    if (errors.length) msg += `\n(${errors.length} failed: ${errors.join('; ')})`;
+    alert(msg);
     loadWorkload();
     loadSubmissions();
+  } else if (errors.length) {
+    alert(`Failed to assign reviewers: ${errors.join('; ')}`);
   }
 }
 
@@ -548,11 +609,15 @@ async function submitBulkStatus() {
   const ids     = [...checked].map(cb => cb.value);
   const status  = document.getElementById('bulkStatusSelect').value;
 
-  const result = await apiFetch('/submissions/bulk-status', {
+  const result = await adminFetch('/submissions/bulk-status', {
     method: 'PUT',
     body: JSON.stringify({ submission_ids: ids, status }),
   });
 
+  if (result && result.__error) {
+    alert(result.message);
+    return;
+  }
   if (result) {
     document.getElementById('bulkStatusModal').classList.remove('show');
     alert(result.message);
@@ -572,7 +637,11 @@ async function submitBulkStatus() {
  * @returns {Promise<void>}
  */
 async function submitExport() {
-  const data = await apiFetch('/export');
+  const data = await adminFetch('/export');
+  if (data && data.__error) {
+    alert(`Export failed: ${data.message}`);
+    return;
+  }
   if (!data) return;
 
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
@@ -598,10 +667,13 @@ async function submitExport() {
  * (and delegated) event handlers in a CSP-friendly way (no inline `onclick`).
  */
 document.addEventListener('DOMContentLoaded', () => {
+  console.log('[admin] DOMContentLoaded — booting admin panel');
   if (!getToken()) {
+    console.warn('[admin] no auth token, redirecting to index');
     window.location.href = 'index.html';
     return;
   }
+  console.log('[admin] window.apiFetch is', typeof window.apiFetch);
 
   loadSubmissions();
   loadUsers();
@@ -659,3 +731,4 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 });
+

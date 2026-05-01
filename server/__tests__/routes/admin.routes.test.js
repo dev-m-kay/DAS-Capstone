@@ -94,7 +94,8 @@ describe('routes/admin', () => {
 
     test('200 when admin deletes another user', async () => {
       User.findById.mockResolvedValue({ id: 5 });
-      User.deleteById.mockResolvedValue([]);
+      User.findSubmissionFilesForUser.mockResolvedValue([]);
+      User.deleteById.mockResolvedValue(1);
       const res = await request(app)
         .delete('/api/admin/users/5')
         .set('Authorization', `Bearer ${adminToken}`);

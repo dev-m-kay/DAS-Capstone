@@ -200,11 +200,34 @@ All API routes are prefixed with `/api`. Protected routes require a `Bearer` tok
 
 ### Messages
 
+The messaging system surfaces three kinds of conversations in one unified
+threads list (`GET /api/messages/threads`):
+
+- **Submission discussions** — one thread per submission, scoped to the
+  author + assigned reviewers + admins/editors.
+- **Staff Lounge** — a single shared channel for every staff member
+  (admin, editor, reviewer). Pinned at the top of the list for staff.
+- **Direct messages** — 1-on-1 between any two staff members. Admins
+  additionally see every other DM in the system as read-only moderation views.
+
 | Method | Endpoint | Body | Access |
 |--------|----------|------|--------|
-| GET | `/api/messages/threads` | — | Logged in |
-| GET | `/api/messages/:submissionId` | — | Logged in |
-| POST | `/api/messages/:submissionId` | `{ body }` | Logged in |
+| GET | `/api/messages/threads` | — | Logged in (admin/editor see every submission thread) |
+| GET | `/api/messages/staff` | — | Admin / Editor / Reviewer |
+| POST | `/api/messages/staff` | `{ body }` | Admin / Editor / Reviewer |
+| GET | `/api/messages/staff-users` | — | Admin / Editor / Reviewer (DM picker) |
+| GET | `/api/messages/dm/:peerId` | — | Staff (admin can DM anyone) |
+| POST | `/api/messages/dm/:peerId` | `{ body }` | Staff (admin can DM anyone) |
+| GET | `/api/messages/dm-pair/:a/:b` | — | Admin only (DM moderation) |
+| GET | `/api/messages/:submissionId` | — | Submission author / assigned reviewer / admin / editor |
+| POST | `/api/messages/:submissionId` | `{ body }` | Submission author / assigned reviewer / admin / editor |
+
+Real-time delivery uses Socket.IO rooms:
+- `staff-lounge` — joined automatically on connect for any staff user.
+- `<KCR-XXXX>` — joined per submission via `join_thread` after a
+  `canAccessSubmission` check.
+- `dm:<minId>:<maxId>` — joined via `join_dm` (own conversation) or
+  `join_dm_pair` (admin moderation only).
 
 ### Admin
 
@@ -286,3 +309,5 @@ Each HTML page is paired with a JS module under `js/` that calls the backend:
 - The JWT token is stored in `localStorage` under the key `authToken`; clearing it (or the **Sign Out** button) logs you out.
 - Uploaded files are stored in the `uploads/` folder and served only via the authenticated route `GET /api/submissions/:id/files/:filename` (with the same access check as the submission itself). The `uploads/` folder is *not* exposed as a static directory.
 - Real-time messages require the Socket.IO client served at `/socket.io/socket.io.js` — already included by Express when Socket.IO is mounted.
+- **In-browser file previews** on the submission detail page support every supported upload format: PDFs render in an iframe (blob URL), images (PNG / JPG / JPEG) render as `<img>`, and `.docx` files are converted to HTML on the client by [mammoth](https://www.npmjs.com/package/mammoth). The mammoth bundle is served at `/js/lib/mammoth.browser.min.js` from `node_modules`. Click any file in the file list to swap it into the preview pane; hold **Shift+Click** to download instead.
+- **Discussion preview**: the submission detail page shows the last few messages of the discussion as a read-only preview. Clicking the card (or pressing Enter while focused) navigates to `messages.html?id=KCR-XXXX`, which auto-selects that submission's thread for composing.

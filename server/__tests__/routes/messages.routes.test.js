@@ -23,18 +23,84 @@ describe('routes/messages', () => {
   });
 
   describe('GET /api/messages/threads', () => {
+    beforeEach(() => {
+      Message.getLatestStaffMessage = jest.fn().mockResolvedValue(null);
+      Message.getThreadsForUser = jest.fn().mockResolvedValue([]);
+      Message.getDirectMessageThreadsForUser = jest.fn().mockResolvedValue([]);
+      Message.getAllDirectMessageThreads = jest.fn().mockResolvedValue([]);
+    });
+
     test('401 without token', async () => {
       const res = await request(app).get('/api/messages/threads');
       expect(res.status).toBe(401);
     });
 
-    test('200 returns threads for the user', async () => {
-      Message.getThreadsForUser.mockResolvedValue([{ id: 1, title: 't' }]);
+    test('200 returns the unified threads list', async () => {
+      Message.getThreadsForUser.mockResolvedValue([{
+        id: 1, body: 'hi', created_at: 't', sender_id: 4,
+        first_name: 'S', last_name: 'B', role: 'submitter',
+        title: 'My Submission', submission_id: 'KCR-0001',
+      }]);
       const res = await request(app)
         .get('/api/messages/threads')
         .set('Authorization', `Bearer ${submitterToken}`);
       expect(res.status).toBe(200);
-      expect(Message.getThreadsForUser).toHaveBeenCalledWith(4);
+      expect(Message.getThreadsForUser).toHaveBeenCalledWith(4, 'submitter');
+      expect(res.body[0]).toEqual(expect.objectContaining({
+        kind: 'submission',
+        key: 'KCR-0001',
+      }));
+    });
+
+    test('reviewer sees the Staff Lounge entry', async () => {
+      const res = await request(app)
+        .get('/api/messages/threads')
+        .set('Authorization', `Bearer ${reviewerToken}`);
+      expect(res.status).toBe(200);
+      expect(res.body[0]).toEqual(expect.objectContaining({ kind: 'staff' }));
+    });
+  });
+
+  describe('Staff Lounge routes', () => {
+    test('POST /api/messages/staff is forbidden for submitters', async () => {
+      const res = await request(app)
+        .post('/api/messages/staff')
+        .set('Authorization', `Bearer ${submitterToken}`)
+        .send({ body: 'hi' });
+      expect(res.status).toBe(403);
+    });
+
+    test('GET /api/messages/staff returns 200 for reviewers', async () => {
+      Message.getStaffMessages = jest.fn().mockResolvedValue([{ id: 1 }]);
+      const res = await request(app)
+        .get('/api/messages/staff')
+        .set('Authorization', `Bearer ${reviewerToken}`);
+      expect(res.status).toBe(200);
+    });
+  });
+
+  describe('DM routes', () => {
+    test('GET /api/messages/dm/:peerId rejects submitters', async () => {
+      User.findById.mockResolvedValue({ id: 7, role: 'reviewer' });
+      const res = await request(app)
+        .get('/api/messages/dm/7')
+        .set('Authorization', `Bearer ${submitterToken}`);
+      expect(res.status).toBe(403);
+    });
+
+    test('POST /api/messages/dm/:peerId 400 for self', async () => {
+      const res = await request(app)
+        .post('/api/messages/dm/7')
+        .set('Authorization', `Bearer ${reviewerToken}`)
+        .send({ body: 'hi' });
+      expect(res.status).toBe(400);
+    });
+
+    test('GET /api/messages/staff-users returns 403 for submitters', async () => {
+      const res = await request(app)
+        .get('/api/messages/staff-users')
+        .set('Authorization', `Bearer ${submitterToken}`);
+      expect(res.status).toBe(403);
     });
   });
 

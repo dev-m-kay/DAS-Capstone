@@ -10,13 +10,17 @@
   <style>
     .msg-layout { display: flex; gap: 0; height: calc(100vh - var(--header-height) - 4rem); min-height: 500px; }
     .msg-threads { width: 320px; border-right: 1px solid var(--border); display: flex; flex-direction: column; background: var(--surface); border-radius: var(--radius-lg) 0 0 var(--radius-lg); overflow: hidden; }
-    .msg-threads-header { padding: 1rem 1.25rem; border-bottom: 1px solid var(--border); }
+    .msg-threads-header { padding: 1rem 1.25rem; border-bottom: 1px solid var(--border); display: flex; flex-direction: column; gap: .6rem; }
+    .msg-threads-header .new-dm-btn { width: 100%; }
     .msg-threads-list { flex: 1; overflow-y: auto; }
     .thread-item { display: flex; gap: .75rem; padding: 1rem 1.25rem; border-bottom: 1px solid var(--border); cursor: pointer; transition: background var(--transition); }
     .thread-item:hover, .thread-item.active { background: var(--primary-light); }
+    .thread-item.pinned { background: linear-gradient(0deg, transparent, transparent), var(--surface-alt, #fafafa); border-left: 3px solid var(--primary); }
+    .thread-item.pinned.active { background: var(--primary-light); }
     .thread-item .thread-avatar { width: 40px; height: 40px; border-radius: 50%; background: var(--primary); display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 600; font-size: .8rem; flex-shrink: 0; }
     .thread-item .thread-info { flex: 1; min-width: 0; }
-    .thread-item .thread-title { font-weight: 600; font-size: .85rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .thread-item .thread-title { font-weight: 600; font-size: .85rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; gap: .25rem; align-items: center; }
+    .thread-item .thread-icon { opacity: .7; font-size: .8rem; }
     .thread-item .thread-preview { font-size: .78rem; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .thread-item .thread-meta { display: flex; justify-content: space-between; align-items: center; margin-top: .2rem; }
     .thread-item .thread-time { font-size: .7rem; color: var(--text-light); }
@@ -32,11 +36,20 @@
     .chat-msg { display: flex; gap: .75rem; margin-bottom: 1.25rem; }
     .chat-msg.own { flex-direction: row-reverse; }
     .chat-msg .chat-avatar { width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 600; font-size: .75rem; flex-shrink: 0; }
-    .chat-msg .chat-bubble { max-width: 70%; padding: .75rem 1rem; border-radius: var(--radius-lg); font-size: .875rem; line-height: 1.5; }
+    .chat-msg .chat-author { font-size: .75rem; color: var(--text-muted); margin-bottom: .25rem; }
+    .chat-msg.own .chat-author { text-align: right; }
+    .chat-msg .chat-author .chat-role { display: inline-block; padding: 0 .35rem; margin-left: .25rem; border-radius: .25rem; background: var(--surface-alt, #f1f5f9); color: var(--text-muted); font-size: .65rem; text-transform: uppercase; }
+    .chat-msg .chat-bubble { max-width: 70%; padding: .75rem 1rem; border-radius: var(--radius-lg); font-size: .875rem; line-height: 1.5; word-wrap: break-word; }
     .chat-msg:not(.own) .chat-bubble { background: var(--surface-alt); }
     .chat-msg.own .chat-bubble { background: var(--primary); color: #fff; }
     .chat-msg .chat-time { font-size: .7rem; color: var(--text-light); margin-top: .3rem; }
     .chat-msg.own .chat-time { text-align: right; }
+
+    .dm-pick-row { display: flex; gap: .75rem; padding: .75rem 1rem; border-bottom: 1px solid var(--border); cursor: pointer; transition: background var(--transition); align-items: center; }
+    .dm-pick-row:hover { background: var(--primary-light); }
+    .dm-pick-info { flex: 1; min-width: 0; }
+    .dm-pick-name { font-weight: 600; font-size: .9rem; }
+    .dm-pick-role { font-size: .75rem; color: var(--text-muted); text-transform: capitalize; }
 
     @media (max-width: 768px) {
       .msg-threads { width: 100%; border-radius: var(--radius-lg); }
@@ -48,7 +61,6 @@
 <body>
   <div class="app-layout">
 
-    <!-- Sidebar -->
     <aside class="sidebar" id="sidebar">
       <div class="sidebar-brand">
         <div class="logo">KCR</div>
@@ -58,7 +70,6 @@
         </div>
       </div>
       <nav class="sidebar-nav" id="sidebarNav">
-        <!--Links will be filled in here by apps.js-->
       </nav>
       <div class="sidebar-footer">
         <div class="avatar" id="userAvatar">U</div>
@@ -69,7 +80,6 @@
       </div>
     </aside>
 
-    <!-- Main -->
     <div class="main-content">
       <header class="top-bar">
         <div style="display:flex;align-items:center;gap:1rem;">
@@ -86,6 +96,7 @@
           <!-- Thread List -->
           <div class="msg-threads">
             <div class="msg-threads-header">
+              <button id="new-dm-btn" type="button" class="btn btn-primary btn-sm new-dm-btn">+ New direct message</button>
               <div class="search-input" style="min-width:auto;">
                 <span class="search-icon">&#128269;</span>
                 <input type="text" placeholder="Search messages..." style="width:100%;">
@@ -99,20 +110,35 @@
           <div class="msg-conversation">
             <div class="msg-conv-header">
               <div>
-                <strong style="font-size:.9rem;">#KCR-0039 — The Glass Garden</strong>
-                <div class="text-small text-muted">Discussion between editors &amp; reviewers</div>
+                <strong id="conv-title" style="font-size:.9rem;">Select a conversation</strong>
+                <div id="conv-subtitle" class="text-small text-muted"></div>
               </div>
-              <a href="submission-detail.html" class="btn btn-secondary btn-sm">View Submission</a>
+              <a id="conv-view-link" href="#" class="btn btn-secondary btn-sm" style="display:none;">View Submission</a>
             </div>
 
             <div class="msg-conv-body" id="conv-body">
             </div>
 
-            <div class="msg-conv-footer">
+            <div class="msg-conv-footer" style="display:none;">
               <input type="text" placeholder="Type your message...">
-              <button class="btn btn-primary">Send</button>
+              <button type="button" class="btn btn-primary">Send</button>
             </div>
           </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- New DM picker modal -->
+  <div id="new-dm-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="new-dm-title">
+    <div class="modal" style="max-width:480px;">
+      <div class="modal-header">
+        <h3 id="new-dm-title">Start a direct message</h3>
+        <button type="button" class="modal-close" aria-label="Close" data-action="close-modal">&times;</button>
+      </div>
+      <div class="modal-body" style="padding:0;max-height:60vh;overflow-y:auto;">
+        <div id="new-dm-list">
+          <p class="text-muted" style="padding:1rem;">Loading staff members…</p>
         </div>
       </div>
     </div>

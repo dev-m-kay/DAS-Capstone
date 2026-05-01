@@ -23,6 +23,35 @@
     .message-compose { display: flex; gap: .5rem; margin-top: .75rem; }
     .message-compose input { flex: 1; padding: .55rem .8rem; border: 1px solid var(--border); border-radius: var(--radius); font-family: inherit; font-size: .875rem; }
     .message-compose input:focus { outline: none; border-color: var(--primary); }
+
+    .doc-preview-image { display: flex; align-items: center; justify-content: center; min-height: 100%; background: var(--surface-alt, #f8fafc); padding: 1rem; }
+    .doc-preview-image img { max-width: 100%; max-height: 70vh; object-fit: contain; box-shadow: var(--shadow); }
+    .doc-preview-docx { padding: 1.5rem; max-height: 70vh; overflow-y: auto; background: #fff; line-height: 1.6; }
+    .doc-preview-docx h1, .doc-preview-docx h2, .doc-preview-docx h3 { margin: 1.25rem 0 .5rem; }
+    .doc-preview-docx p { margin: .5rem 0; }
+    .doc-preview-docx table { border-collapse: collapse; margin: .5rem 0; }
+    .doc-preview-docx td, .doc-preview-docx th { border: 1px solid var(--border); padding: .35rem .5rem; }
+    .doc-preview-docx img { max-width: 100%; }
+
+    .discussion-preview { cursor: pointer; transition: background var(--transition); }
+    .discussion-preview:hover { background: var(--primary-light); }
+    .discussion-preview .discussion-cta { display: flex; align-items: center; justify-content: space-between; gap: .5rem; padding-top: .5rem; margin-top: .5rem; border-top: 1px solid var(--border); font-size: .85rem; color: var(--primary); font-weight: 500; }
+    .discussion-preview .discussion-cta .arrow { font-size: 1rem; }
+
+    .reviews-summary { display: flex; align-items: baseline; gap: .5rem; margin-bottom: .75rem; padding-bottom: .75rem; border-bottom: 1px solid var(--border); }
+    .reviews-summary .avg { font-size: 1.5rem; font-weight: 700; color: var(--text); }
+    .reviews-summary .avg-stars { color: var(--accent, #f59e0b); letter-spacing: 1px; }
+    .reviews-summary .avg-meta { color: var(--text-muted); font-size: .8rem; }
+
+    .review-entry { padding: .75rem 0; border-bottom: 1px solid var(--border); }
+    .review-entry:last-child { border-bottom: none; }
+    .review-entry-head { display: flex; justify-content: space-between; align-items: baseline; gap: .5rem; }
+    .review-entry-name { font-weight: 600; font-size: .9rem; }
+    .review-entry-name .role-badge { display: inline-block; padding: 0 .35rem; margin-left: .25rem; border-radius: .25rem; background: var(--surface-alt, #f1f5f9); color: var(--text-muted); font-size: .65rem; text-transform: uppercase; }
+    .review-entry-stars { color: var(--accent, #f59e0b); letter-spacing: 1px; font-size: .9rem; }
+    .review-entry-time { font-size: .7rem; color: var(--text-light); }
+    .review-entry-comment { font-size: .85rem; line-height: 1.5; margin-top: .35rem; white-space: pre-wrap; word-wrap: break-word; }
+    .review-entry-comment.muted { color: var(--text-muted); font-style: italic; }
   </style>
 </head>
 
@@ -126,14 +155,29 @@
             </div>
           </div>
 
-          <!-- DISCUSSION -->
-          <div class="card">
-            <div class="card-header"><h4>Discussion</h4></div>
+          <!-- REVIEWER FEEDBACK (admin/editor only; populated by reviews.js) -->
+          <div class="card" id="reviews-card" style="display:none;">
+            <div class="card-header"><h4>Reviewer Feedback</h4></div>
+            <div class="card-body">
+              <div id="reviews-summary" class="reviews-summary" style="display:none;"></div>
+              <div id="reviews-list">
+                <p class="text-muted" style="font-size:.85rem;">Loading reviews…</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- DISCUSSION (preview only — clicking opens the full Messages page) -->
+          <div class="card discussion-preview" id="discussion-card" role="link" tabindex="0"
+               aria-label="Open discussion in Messages">
+            <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
+              <h4>Discussion</h4>
+              <span class="text-small text-muted" id="discussion-count"></span>
+            </div>
             <div class="card-body">
               <div class="message-list" id="message-list"></div>
-              <div class="message-compose">
-                <input type="text" placeholder="Type a message..." aria-label="Message">
-                <button class="btn btn-primary btn-sm">Send</button>
+              <div class="discussion-cta">
+                <span>Open in Messages</span>
+                <span class="arrow" aria-hidden="true">&rarr;</span>
               </div>
             </div>
           </div>
@@ -149,6 +193,7 @@
 
 <script src="../js/app.js"></script>
 <script src="/socket.io/socket.io.js"></script>
+<script src="/js/lib/mammoth.browser.min.js"></script>
 <script src="../js/submissions.js"></script>
 <script src="../js/reviews.js"></script>
 <script src="../js/messages.js"></script>

@@ -84,12 +84,48 @@ describe('controllers/adminController', () => {
 
     test('deletes a different user', async () => {
       User.findById.mockResolvedValue({ id: 5 });
-      User.deleteById.mockResolvedValue([]);
+      User.findSubmissionFilesForUser.mockResolvedValue([]);
+      User.deleteById.mockResolvedValue(1);
       const req = { params: { id: 5 }, user: { id: 99 } };
       const res = mockRes();
       await adminController.deleteUser(req, res);
       expect(User.deleteById).toHaveBeenCalledWith(5);
       expect(res.json).toHaveBeenCalledWith({ message: 'User deleted' });
+    });
+
+    test('cleans up upload files on disk after the cascade delete', async () => {
+      User.findById.mockResolvedValue({ id: 5 });
+      User.findSubmissionFilesForUser.mockResolvedValue([
+        'a.pdf',
+        'b.docx',
+        '../escape.txt', // path-traversal attempt — must be ignored
+      ]);
+      User.deleteById.mockResolvedValue(1);
+      const fs = require('fs');
+      const unlinkSpy = jest.spyOn(fs, 'unlink').mockImplementation((p, cb) => cb && cb());
+
+      const req = { params: { id: 5 }, user: { id: 99 } };
+      const res = mockRes();
+      await adminController.deleteUser(req, res);
+
+      expect(res.json).toHaveBeenCalledWith({ message: 'User deleted' });
+      const unlinkedNames = unlinkSpy.mock.calls.map(c => require('path').basename(c[0]));
+      expect(unlinkedNames).toEqual(expect.arrayContaining(['a.pdf', 'b.docx']));
+      expect(unlinkedNames).not.toEqual(expect.arrayContaining(['escape.txt']));
+      unlinkSpy.mockRestore();
+    });
+
+    test('returns 409 when the cascade delete still hits a foreign-key violation', async () => {
+      User.findById.mockResolvedValue({ id: 5 });
+      User.findSubmissionFilesForUser.mockResolvedValue([]);
+      const fkErr = Object.assign(new Error('FK violation'), { code: '23503' });
+      User.deleteById.mockRejectedValue(fkErr);
+      jest.spyOn(console, 'error').mockImplementation(() => {});
+
+      const req = { params: { id: 5 }, user: { id: 99 } };
+      const res = mockRes();
+      await adminController.deleteUser(req, res);
+      expect(res.status).toHaveBeenCalledWith(409);
     });
   });
 

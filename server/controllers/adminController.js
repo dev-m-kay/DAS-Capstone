@@ -10,9 +10,14 @@
  * `500 { error: 'Something went wrong' }`.
  */
 
+const fs = require('fs');
+const path = require('path');
 const { pool } = require('../config/db');
 const User = require('../models/User');
 const Submission = require('../models/Submission');
+
+/** Directory where Multer drops uploaded submission files. */
+const UPLOAD_DIR = path.join(__dirname, '..', '..', 'uploads');
 
 /**
  * `GET /api/admin/users` — Returns every user in the system (without
@@ -83,10 +88,37 @@ exports.deleteUser = async (req, res) => {
       return res.status(400).json({ error: 'You cannot delete your own account' });
     }
 
+    // Capture the on-disk filenames *before* the DB rows are deleted so we
+    // can best-effort remove the uploads after the transaction commits. If
+    // the lookup itself fails we don't block the delete; the worst case is
+    // a few orphan files in /uploads.
+    let filenames = [];
+    if (typeof User.findSubmissionFilesForUser === 'function') {
+      try {
+        const result = await User.findSubmissionFilesForUser(user.id);
+        if (Array.isArray(result)) filenames = result;
+      } catch (lookupErr) {
+        console.error('deleteUser: file lookup failed (continuing):', lookupErr);
+      }
+    }
+
     await User.deleteById(user.id);
+
+    for (const filename of filenames) {
+      // Defence in depth: ignore anything that smells like path traversal so
+      // a corrupted DB row can never coerce us into unlinking outside /uploads.
+      if (!filename || filename.includes('/') || filename.includes('\\') || filename.includes('..')) continue;
+      fs.unlink(path.join(UPLOAD_DIR, filename), () => {});
+    }
+
     res.json({ message: 'User deleted' });
   } catch (err) {
     console.error(err);
+    if (err && err.code === '23503') {
+      return res.status(409).json({
+        error: 'Cannot delete user: they still have related records. Please contact a developer.',
+      });
+    }
     res.status(500).json({ error: 'Something went wrong' });
   }
 };

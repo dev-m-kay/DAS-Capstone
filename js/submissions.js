@@ -331,6 +331,104 @@ async function fetchFileBlobUrl(submissionId, filename) {
   return url;
 }
 
+// Returns 'pdf' | 'image' | 'docx' | 'text' | 'unknown' for the given file
+// metadata returned by /api/submissions/:id/files. Trusts mimetype first,
+// falls back to the filename extension.
+function classifyFile(file) {
+  const mt = (file.mimetype || '').toLowerCase();
+  const name = (file.original_name || file.filename || '').toLowerCase();
+  if (mt === 'application/pdf' || name.endsWith('.pdf')) return 'pdf';
+  if (mt.startsWith('image/') ||
+      name.endsWith('.png') || name.endsWith('.jpg') ||
+      name.endsWith('.jpeg') || name.endsWith('.gif') ||
+      name.endsWith('.webp')) return 'image';
+  if (mt === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
+      name.endsWith('.docx')) return 'docx';
+  if (mt.startsWith('text/') ||
+      name.endsWith('.txt') || name.endsWith('.md')) return 'text';
+  return 'unknown';
+}
+
+// Render a file into the preview body. Handles each format we know about and
+// falls back to a friendly download prompt for the rest.
+async function renderFilePreview(submissionId, file, previewBody) {
+  if (!previewBody) return;
+  const kind = classifyFile(file);
+  previewBody.innerHTML =
+    '<p class="text-muted" style="text-align:center;margin-top:2rem;">Loading preview\u2026</p>';
+
+  try {
+    if (kind === 'pdf') {
+      const url = await fetchFileBlobUrl(submissionId, file.filename);
+      previewBody.innerHTML =
+        `<iframe src="${url}" title="${escapeHtml(file.original_name)}"
+                 style="width:100%;height:100%;border:none;"></iframe>`;
+      return;
+    }
+
+    if (kind === 'image') {
+      const url = await fetchFileBlobUrl(submissionId, file.filename);
+      const wrapper = document.createElement('div');
+      wrapper.className = 'doc-preview-image';
+      const img = document.createElement('img');
+      img.src = url;
+      img.alt = file.original_name || 'Image preview';
+      wrapper.appendChild(img);
+      previewBody.innerHTML = '';
+      previewBody.appendChild(wrapper);
+      return;
+    }
+
+    if (kind === 'docx') {
+      if (typeof window.mammoth === 'undefined') {
+        previewBody.innerHTML =
+          '<p class="text-muted" style="text-align:center;margin-top:2rem;">' +
+          'DOCX preview library failed to load. Use Download to view this file.</p>';
+        return;
+      }
+      const res = await apiFetch(
+        `/api/submissions/${encodeURIComponent(submissionId)}/files/${encodeURIComponent(file.filename)}`
+      );
+      if (!res || !res.ok) throw new Error('Failed to fetch file');
+      const arrayBuffer = await res.arrayBuffer();
+      const result = await window.mammoth.convertToHtml({ arrayBuffer });
+      const wrapper = document.createElement('div');
+      wrapper.className = 'doc-preview-docx';
+      // mammoth's HTML output is sanitized — it only emits a small set of
+      // semantic tags (p, h1..h6, ul, ol, li, table, img with data: URIs).
+      wrapper.innerHTML = result.value ||
+        '<p class="text-muted">This document appears to be empty.</p>';
+      previewBody.innerHTML = '';
+      previewBody.appendChild(wrapper);
+      return;
+    }
+
+    if (kind === 'text') {
+      const res = await apiFetch(
+        `/api/submissions/${encodeURIComponent(submissionId)}/files/${encodeURIComponent(file.filename)}`
+      );
+      if (!res || !res.ok) throw new Error('Failed to fetch file');
+      const text = await res.text();
+      const wrapper = document.createElement('pre');
+      wrapper.className = 'doc-preview-docx';
+      wrapper.style.whiteSpace = 'pre-wrap';
+      wrapper.textContent = text;
+      previewBody.innerHTML = '';
+      previewBody.appendChild(wrapper);
+      return;
+    }
+
+    previewBody.innerHTML =
+      '<p class="text-muted" style="text-align:center;margin-top:2rem;">' +
+      'No in-browser preview is available for this file type. ' +
+      'Use Download to view it.</p>';
+  } catch (err) {
+    console.error('Failed to render preview:', err);
+    previewBody.innerHTML =
+      '<p class="text-muted" style="text-align:center;margin-top:2rem;">Failed to load preview.</p>';
+  }
+}
+
 async function loadSubmissionFiles(id) {
   const filesBox = document.getElementById('detail-files');
   const previewBody = document.getElementById('document-preview-body');
@@ -357,35 +455,48 @@ async function loadSubmissionFiles(id) {
       </div>
     `).join('');
 
-    // Wire each file link to download via the authenticated route.
+    // Track which file is currently displayed in the preview pane so the
+    // top-bar Download button always grabs the right one.
+    let activeFile = files[0];
+
+    const setActiveFile = async (file) => {
+      activeFile = file;
+      if (previewName) previewName.textContent = file.original_name;
+      await renderFilePreview(id, file, previewBody);
+    };
+
+    // Click a file name → swap it into the preview pane (instead of
+    // immediately downloading). Holding Shift downloads, mirroring the old
+    // behaviour for users who want a quick save.
     filesBox.querySelectorAll('a[data-file-idx]').forEach(link => {
       link.addEventListener('click', async (e) => {
         e.preventDefault();
         const file = files[parseInt(link.dataset.fileIdx, 10)];
-        try {
-          const url = await fetchFileBlobUrl(id, file.filename);
-          const a = document.createElement('a');
-          a.href = url;
-          a.download = file.original_name;
-          document.body.appendChild(a);
-          a.click();
-          a.remove();
-        } catch (err) {
-          alert('Failed to download file');
+        if (e.shiftKey) {
+          try {
+            const url = await fetchFileBlobUrl(id, file.filename);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = file.original_name;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+          } catch (err) {
+            alert('Failed to download file');
+          }
+          return;
         }
+        await setActiveFile(file);
       });
     });
 
-    const first = files[0];
-
-    if (previewName) previewName.textContent = first.original_name;
     if (downloadBtn) {
       downloadBtn.onclick = async () => {
         try {
-          const url = await fetchFileBlobUrl(id, first.filename);
+          const url = await fetchFileBlobUrl(id, activeFile.filename);
           const a = document.createElement('a');
           a.href = url;
-          a.download = first.original_name;
+          a.download = activeFile.original_name;
           document.body.appendChild(a);
           a.click();
           a.remove();
@@ -395,20 +506,7 @@ async function loadSubmissionFiles(id) {
       };
     }
 
-    if (previewBody) {
-      const isPdf = first.mimetype === 'application/pdf' ||
-                    (first.original_name || '').toLowerCase().endsWith('.pdf');
-      if (isPdf) {
-        try {
-          const url = await fetchFileBlobUrl(id, first.filename);
-          previewBody.innerHTML = `<iframe src="${url}" style="width:100%;height:100%;border:none;"></iframe>`;
-        } catch (err) {
-          previewBody.innerHTML = '<p class="text-muted" style="text-align:center;margin-top:2rem;">Failed to load preview.</p>';
-        }
-      } else {
-        previewBody.innerHTML = '<p class="text-muted" style="text-align:center;margin-top:2rem;">Preview is only available for PDFs. Use Download to view this file.</p>';
-      }
-    }
+    await setActiveFile(files[0]);
 
   } catch (err) {
     console.error('Failed to load files:', err);

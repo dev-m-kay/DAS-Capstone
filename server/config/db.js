@@ -109,6 +109,32 @@ async function initializeDatabase() {
       UNIQUE(submission_id, reviewer_id)
     );
 
+    -- Shared "Staff Lounge" channel: a single chat that any admin / editor /
+    -- reviewer can read and post to. Not tied to a submission.
+    CREATE TABLE IF NOT EXISTS staff_messages (
+      id          SERIAL PRIMARY KEY,
+      sender_id   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      body        TEXT    NOT NULL,
+      created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_staff_messages_created
+      ON staff_messages(created_at);
+
+    -- 1-on-1 direct messages between any two users (intended for staff↔staff
+    -- communication, but the FK doesn't restrict by role — the API layer does).
+    CREATE TABLE IF NOT EXISTS direct_messages (
+      id            SERIAL PRIMARY KEY,
+      sender_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      recipient_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      body          TEXT    NOT NULL,
+      created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      CONSTRAINT no_self_dm CHECK (sender_id <> recipient_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_dm_pair
+      ON direct_messages(LEAST(sender_id, recipient_id),
+                         GREATEST(sender_id, recipient_id),
+                         created_at);
+
     -- Enable Row Level Security on all tables
     ALTER TABLE users ENABLE ROW LEVEL SECURITY;
     ALTER TABLE submissions ENABLE ROW LEVEL SECURITY;
@@ -116,6 +142,8 @@ async function initializeDatabase() {
     ALTER TABLE reviews ENABLE ROW LEVEL SECURITY;
     ALTER TABLE messages ENABLE ROW LEVEL SECURITY;
     ALTER TABLE assignments ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE staff_messages ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE direct_messages ENABLE ROW LEVEL SECURITY;
   `);
 }
 

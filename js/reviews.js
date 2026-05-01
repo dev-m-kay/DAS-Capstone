@@ -249,15 +249,26 @@ function initReviewWidget() {
   if (ratingCard && user) {
     if (user.role !== 'reviewer' && user.role !== 'editor' && user.role !== 'admin') {
       ratingCard.style.display = 'none';
-      return;
     }
   }
 
   var submissionId = getQueryId();
   if (!submissionId) return;
 
-  // Load existing review
-  loadExistingReview(submissionId);
+  // Admin / editor: show every reviewer's feedback for this submission.
+  // (Reviewers see only their own review in the rating card; submitters see
+  //  nothing here.)
+  if (user && (user.role === 'admin' || user.role === 'editor')) {
+    loadReviewerFeedback(submissionId);
+  }
+
+  // For everyone allowed to leave a review, prefill the rating card if they
+  // have already done so.
+  if (user && (user.role === 'reviewer' || user.role === 'editor' || user.role === 'admin')) {
+    loadExistingReview(submissionId);
+  } else {
+    return;
+  }
 
   // Wire star clicks
   var stars = document.querySelectorAll('#ratingStars .star');
@@ -286,6 +297,90 @@ function initReviewWidget() {
       submitReview();
     });
   }
+}
+
+// Render the list of every reviewer's feedback (admin/editor only). Pulled
+// from GET /api/reviews/:submissionId — backend already enforces access.
+async function loadReviewerFeedback(submissionId) {
+  var card = document.getElementById('reviews-card');
+  var listEl = document.getElementById('reviews-list');
+  var summaryEl = document.getElementById('reviews-summary');
+  if (!card || !listEl) return;
+
+  card.style.display = '';
+
+  try {
+    var res = await apiFetch('/api/reviews/' + encodeURIComponent(submissionId));
+    if (!res.ok) {
+      var data = await res.json().catch(function() { return {}; });
+      listEl.innerHTML =
+        '<p class="text-muted" style="font-size:.85rem;">' +
+          escapeHtml(data.error || 'Could not load reviews.') +
+        '</p>';
+      return;
+    }
+    var reviews = await res.json();
+
+    if (!reviews.length) {
+      if (summaryEl) summaryEl.style.display = 'none';
+      listEl.innerHTML =
+        '<p class="text-muted" style="font-size:.85rem;">No reviews submitted yet.</p>';
+      return;
+    }
+
+    // Average rating block.
+    var sum = 0;
+    for (var i = 0; i < reviews.length; i++) sum += Number(reviews[i].rating) || 0;
+    var avg = sum / reviews.length;
+    var avgRounded = Math.round(avg * 10) / 10;
+
+    if (summaryEl) {
+      summaryEl.style.display = '';
+      summaryEl.innerHTML =
+        '<span class="avg">' + avgRounded.toFixed(1) + '</span>' +
+        '<span class="avg-stars" aria-hidden="true">' + renderStars(avg) + '</span>' +
+        '<span class="avg-meta">' + reviews.length + ' review' + (reviews.length === 1 ? '' : 's') + '</span>';
+    }
+
+    listEl.innerHTML = reviews.map(function(r) {
+      var name = ((r.first_name || '') + ' ' + (r.last_name || '')).trim() || 'Unknown reviewer';
+      var role = r.role ? ' <span class="role-badge">' + escapeHtml(r.role) + '</span>' : '';
+      var commentHtml = r.comment && r.comment.trim()
+        ? '<div class="review-entry-comment">' + escapeHtml(r.comment) + '</div>'
+        : '<div class="review-entry-comment muted">No comment.</div>';
+      return (
+        '<div class="review-entry">' +
+          '<div class="review-entry-head">' +
+            '<div>' +
+              '<span class="review-entry-name">' + escapeHtml(name) + role + '</span>' +
+              '<div class="review-entry-time">' + formatDate(r.created_at) + '</div>' +
+            '</div>' +
+            '<span class="review-entry-stars" aria-label="Rating ' + Number(r.rating) + ' of 5">' +
+              renderStars(Number(r.rating) || 0) +
+            '</span>' +
+          '</div>' +
+          commentHtml +
+        '</div>'
+      );
+    }).join('');
+  } catch (err) {
+    console.error('Failed to load reviewer feedback:', err);
+    listEl.innerHTML =
+      '<p class="text-muted" style="font-size:.85rem;">Could not load reviews.</p>';
+  }
+}
+
+// Render a 5-star line where `n` may be fractional. Filled \u2605, empty \u2606.
+function renderStars(n) {
+  var rounded = Math.round((Number(n) || 0) * 2) / 2; // half-star precision
+  var full = Math.floor(rounded);
+  var half = rounded - full >= 0.5 ? 1 : 0;
+  var empty = 5 - full - half;
+  var s = '';
+  for (var i = 0; i < full; i++) s += '\u2605';
+  if (half) s += '\u00BD'; // a tiny "½" suffix on the last filled star
+  for (var j = 0; j < empty; j++) s += '\u2606';
+  return s;
 }
 
 async function loadExistingReview(submissionId) {
@@ -383,6 +478,13 @@ async function submitReview() {
 
     // Re-call loadExistingReview to refresh state and button label
     loadExistingReview(submissionId);
+
+    // If the admin/editor "Reviewer Feedback" card is on the page, refresh
+    // it too so the freshly-saved review shows up immediately.
+    var feedbackCard = document.getElementById('reviews-card');
+    if (feedbackCard && feedbackCard.style.display !== 'none') {
+      loadReviewerFeedback(submissionId);
+    }
 
   } catch (err) {
     console.error('Review submit error:', err);
