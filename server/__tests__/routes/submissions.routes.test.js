@@ -114,4 +114,51 @@ describe('routes/submissions', () => {
       expect(res.body).toEqual({ id: 9, status: 'accepted' });
     });
   });
+
+  describe('DELETE /api/submissions/:id', () => {
+    test('401 without token', async () => {
+      const res = await request(app).delete('/api/submissions/KCR-0001');
+      expect(res.status).toBe(401);
+    });
+
+    test('admins can delete any submission', async () => {
+      Submission.findBySubmissionId.mockResolvedValue({ id: 9, user_id: 999, status: 'accepted' });
+      Submission.getFiles.mockResolvedValue([]);
+      Submission.deleteById.mockResolvedValue(1);
+      const res = await request(app)
+        .delete('/api/submissions/KCR-0001')
+        .set('Authorization', `Bearer ${adminToken}`);
+      expect(res.status).toBe(200);
+      expect(Submission.deleteById).toHaveBeenCalledWith(9);
+    });
+
+    test('403 when a submitter tries to delete someone else\'s submission', async () => {
+      Submission.findBySubmissionId.mockResolvedValue({ id: 9, user_id: 999, status: 'pending' });
+      const res = await request(app)
+        .delete('/api/submissions/KCR-0001')
+        .set('Authorization', `Bearer ${submitterToken}`);
+      expect(res.status).toBe(403);
+      expect(Submission.deleteById).not.toHaveBeenCalled();
+    });
+
+    test('409 when an author tries to delete a non-pending submission', async () => {
+      Submission.findBySubmissionId.mockResolvedValue({ id: 9, user_id: 3, status: 'in_review' });
+      const res = await request(app)
+        .delete('/api/submissions/KCR-0001')
+        .set('Authorization', `Bearer ${submitterToken}`);
+      expect(res.status).toBe(409);
+      expect(Submission.deleteById).not.toHaveBeenCalled();
+    });
+
+    test('200 when an author deletes their own pending submission', async () => {
+      Submission.findBySubmissionId.mockResolvedValue({ id: 9, user_id: 3, status: 'pending' });
+      Submission.getFiles.mockResolvedValue([]);
+      Submission.deleteById.mockResolvedValue(1);
+      const res = await request(app)
+        .delete('/api/submissions/KCR-0001')
+        .set('Authorization', `Bearer ${submitterToken}`);
+      expect(res.status).toBe(200);
+      expect(Submission.deleteById).toHaveBeenCalledWith(9);
+    });
+  });
 });

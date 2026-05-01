@@ -82,6 +82,11 @@ async function initializeDatabase() {
       size           INTEGER NOT NULL,
       created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+    -- File bytes live in the DB so they are available to any server
+    -- instance, not just the box that took the upload. Idempotent:
+    -- existing rows from the disk-only era keep data = NULL and the
+    -- download route falls back to /uploads for those.
+    ALTER TABLE submission_files ADD COLUMN IF NOT EXISTS data BYTEA;
 
     CREATE TABLE IF NOT EXISTS reviews (
       id             SERIAL PRIMARY KEY,

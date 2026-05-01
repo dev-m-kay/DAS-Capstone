@@ -13,16 +13,11 @@ const ALLOWED_MIME = new Set([
   'image/jpeg',
 ]);
 
-const storage = multer.diskStorage({
-  destination: path.join(__dirname, '..', '..', 'uploads'),
-  filename: (req, file, cb) => {
-    const unique = Date.now() + '-' + Math.round(Math.random() * 1e6);
-    // Normalize the extension and ignore whatever the client claimed for the
-    // base name so the stored filename can never contain path traversal.
-    const ext = path.extname(file.originalname).toLowerCase();
-    cb(null, unique + ext);
-  }
-});
+// Files are kept in memory only long enough to insert the bytes into the
+// database — we no longer write them to /uploads. This guarantees every
+// server instance can serve every file (the disk-only setup meant a file
+// uploaded on machine A was unreadable from machine B).
+const storage = multer.memoryStorage();
 
 const fileFilter = (req, file, cb) => {
   const ext = path.extname(file.originalname).toLowerCase();
@@ -45,5 +40,6 @@ router.get('/:id/files/:filename',        ctrl.downloadFile);
 router.get('/:id/reviewers',              ctrl.getReviewers);
 router.get('/:id/rating',                 ctrl.getRating);
 router.put('/:id/status',                 authorize('admin', 'editor'), ctrl.updateStatus);
+router.delete('/:id',                     ctrl.delete);
 
 module.exports = router;

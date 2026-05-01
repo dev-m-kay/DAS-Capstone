@@ -89,20 +89,23 @@ const submissionModel = {
     return rows[0];
   },
 
-  async addFile(submission_id, filename, original_name, mimetype, size) {
+  async addFile(submission_id, filename, original_name, mimetype, size, data = null) {
     const { rows } = await pool.query(
       `INSERT INTO submission_files
-       (submission_id, filename, original_name, mimetype, size)
-       VALUES ($1, $2, $3, $4, $5)
-       RETURNING *`,
-      [submission_id, filename, original_name, mimetype, size]
+       (submission_id, filename, original_name, mimetype, size, data)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       RETURNING id, submission_id, filename, original_name, mimetype, size, created_at`,
+      [submission_id, filename, original_name, mimetype, size, data]
     );
     return rows[0];
   },
 
   async getFiles(submission_id) {
+    // Skip the heavyweight `data` column in list responses — only the
+    // download endpoint needs the bytes.
     const { rows } = await pool.query(
-      `SELECT * FROM submission_files
+      `SELECT id, submission_id, filename, original_name, mimetype, size, created_at
+       FROM submission_files
        WHERE submission_id = $1`,
       [submission_id]
     );
@@ -114,8 +117,12 @@ const submissionModel = {
   // file-download endpoint so a user can't fetch a file from a submission
   // they don't have access to even if they know the random filename.
   async findFileByFilename(submission_pk, filename) {
+    // Includes the BYTEA `data` column so the download endpoint can stream
+    // straight from the DB. `data` is null for legacy disk-only rows; the
+    // controller falls back to /uploads for those.
     const { rows } = await pool.query(
-      `SELECT * FROM submission_files
+      `SELECT id, submission_id, filename, original_name, mimetype, size, created_at, data
+       FROM submission_files
        WHERE submission_id = $1 AND filename = $2`,
       [submission_pk, filename]
     );
@@ -124,6 +131,9 @@ const submissionModel = {
 
   // Atomic create: insert the submission row and any associated file rows in
   // one transaction so a partial failure can't leave an orphan submission.
+  // Each file in `files` may carry a `data` Buffer (the file bytes, from
+  // multer's memoryStorage); when present it's stored in the DB so the file
+  // is available to every server instance.
   async createWithFiles(data, files) {
     const client = await pool.connect();
     try {
@@ -150,10 +160,17 @@ const submissionModel = {
       for (const file of files || []) {
         const { rows: fileRows } = await client.query(
           `INSERT INTO submission_files
-             (submission_id, filename, original_name, mimetype, size)
-           VALUES ($1, $2, $3, $4, $5)
-           RETURNING *`,
-          [submission.id, file.filename, file.original_name, file.mimetype, file.size]
+             (submission_id, filename, original_name, mimetype, size, data)
+           VALUES ($1, $2, $3, $4, $5, $6)
+           RETURNING id, submission_id, filename, original_name, mimetype, size, created_at`,
+          [
+            submission.id,
+            file.filename,
+            file.original_name,
+            file.mimetype,
+            file.size,
+            file.data ?? null,
+          ]
         );
         insertedFiles.push(fileRows[0]);
       }
@@ -166,6 +183,19 @@ const submissionModel = {
     } finally {
       client.release();
     }
+  },
+
+  // Delete a submission by its integer PK. Schema-level ON DELETE CASCADE
+  // takes care of submission_files (including their `data` BYTEA),
+  // reviews, messages, and assignments. The caller is responsible for
+  // best-effort cleanup of legacy disk uploads — see
+  // `getFiles(submissionId)` to capture the filenames first.
+  async deleteById(id) {
+    const { rowCount } = await pool.query(
+      'DELETE FROM submissions WHERE id = $1',
+      [id]
+    );
+    return rowCount;
   },
 
   async getAssignedReviewers(submission_id) {

@@ -67,31 +67,50 @@ describe('controllers/submissionController', () => {
       expect(res.status).toHaveBeenCalledWith(201);
     });
 
-    test('passes uploaded files into createWithFiles', async () => {
+    test('passes uploaded files (and their bytes) into createWithFiles', async () => {
       Submission.nextSubmissionID.mockResolvedValue('KCR-0002');
       Submission.createWithFiles.mockResolvedValue({
         submission: { id: 51, submission_id: 'KCR-0002' },
         files: [],
       });
 
+      const bufA = Buffer.from('PDF-bytes');
+      const bufB = Buffer.from('DOCX-bytes');
       const req = {
         user: { id: 1 },
         body: validBody,
+        // multer.memoryStorage() shape: each file has a `buffer`, but no
+        // `filename` (the controller invents one).
         files: [
-          { filename: 'a.pdf', originalname: 'a.pdf', mimetype: 'application/pdf', size: 100 },
-          { filename: 'b.docx', originalname: 'b.docx', mimetype: 'application/msword', size: 200 },
+          { originalname: 'a.pdf',  mimetype: 'application/pdf',     size: 100, buffer: bufA },
+          { originalname: 'b.docx', mimetype: 'application/msword',  size: 200, buffer: bufB },
         ],
       };
       const res = mockRes();
       await submissionController.create(req, res);
 
+      // Filenames are now generated server-side, so we only assert on the
+      // stable fields and on the bytes flowing through.
       expect(Submission.createWithFiles).toHaveBeenCalledWith(
         expect.any(Object),
         [
-          { filename: 'a.pdf', original_name: 'a.pdf', mimetype: 'application/pdf', size: 100 },
-          { filename: 'b.docx', original_name: 'b.docx', mimetype: 'application/msword', size: 200 },
+          expect.objectContaining({
+            original_name: 'a.pdf',
+            mimetype: 'application/pdf',
+            size: 100,
+            data: bufA,
+          }),
+          expect.objectContaining({
+            original_name: 'b.docx',
+            mimetype: 'application/msword',
+            size: 200,
+            data: bufB,
+          }),
         ],
       );
+      const filesArg = Submission.createWithFiles.mock.calls[0][1];
+      expect(filesArg[0].filename).toMatch(/\.pdf$/);
+      expect(filesArg[1].filename).toMatch(/\.docx$/);
     });
 
     test('500 and best-effort cleanup when createWithFiles throws', async () => {
@@ -158,6 +177,79 @@ describe('controllers/submissionController', () => {
       const res = mockRes();
       await submissionController.downloadFile(req, res);
       expect(res.status).toHaveBeenCalledWith(404);
+    });
+
+    test('streams from the DB BYTEA column when bytes are present', async () => {
+      Submission.findBySubmissionId.mockResolvedValue({ id: 1, user_id: 1 });
+      canAccessSubmission.mockResolvedValue(true);
+      const buf = Buffer.from('hello world');
+      Submission.findFileByFilename.mockResolvedValue({
+        filename: 'x.pdf',
+        original_name: 'orig.pdf',
+        mimetype: 'application/pdf',
+        data: buf,
+      });
+      const req = {
+        user: { id: 1 },
+        params: { id: 'KCR-0001', filename: 'x.pdf' },
+      };
+      const res = mockRes();
+      await submissionController.downloadFile(req, res);
+      expect(res.setHeader).toHaveBeenCalledWith('Content-Type', 'application/pdf');
+      expect(res.setHeader).toHaveBeenCalledWith('Content-Length', buf.length);
+      expect(res.end).toHaveBeenCalledWith(buf);
+      // We must NOT touch the disk fallback when bytes came from the DB.
+      expect(res.sendFile).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('delete()', () => {
+    test('404 when submission missing', async () => {
+      Submission.findBySubmissionId.mockResolvedValue(undefined);
+      const req = { user: { id: 1, role: 'admin' }, params: { id: 'KCR-9999' } };
+      const res = mockRes();
+      await submissionController.delete(req, res);
+      expect(res.status).toHaveBeenCalledWith(404);
+      expect(Submission.deleteById).not.toHaveBeenCalled();
+    });
+
+    test('403 when caller is neither admin nor the author', async () => {
+      Submission.findBySubmissionId.mockResolvedValue({ id: 1, user_id: 99, status: 'pending' });
+      const req = { user: { id: 1, role: 'submitter' }, params: { id: 'KCR-0001' } };
+      const res = mockRes();
+      await submissionController.delete(req, res);
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(Submission.deleteById).not.toHaveBeenCalled();
+    });
+
+    test('409 when the author tries to delete a non-pending submission', async () => {
+      Submission.findBySubmissionId.mockResolvedValue({ id: 1, user_id: 5, status: 'in_review' });
+      const req = { user: { id: 5, role: 'submitter' }, params: { id: 'KCR-0001' } };
+      const res = mockRes();
+      await submissionController.delete(req, res);
+      expect(res.status).toHaveBeenCalledWith(409);
+      expect(Submission.deleteById).not.toHaveBeenCalled();
+    });
+
+    test('admins can delete any submission, regardless of status', async () => {
+      Submission.findBySubmissionId.mockResolvedValue({ id: 9, user_id: 5, status: 'accepted' });
+      Submission.getFiles.mockResolvedValue([]);
+      Submission.deleteById.mockResolvedValue(1);
+      const req = { user: { id: 99, role: 'admin' }, params: { id: 'KCR-0001' } };
+      const res = mockRes();
+      await submissionController.delete(req, res);
+      expect(Submission.deleteById).toHaveBeenCalledWith(9);
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ message: expect.any(String) }));
+    });
+
+    test('the author can delete their own pending submission', async () => {
+      Submission.findBySubmissionId.mockResolvedValue({ id: 9, user_id: 5, status: 'pending' });
+      Submission.getFiles.mockResolvedValue([]);
+      Submission.deleteById.mockResolvedValue(1);
+      const req = { user: { id: 5, role: 'submitter' }, params: { id: 'KCR-0001' } };
+      const res = mockRes();
+      await submissionController.delete(req, res);
+      expect(Submission.deleteById).toHaveBeenCalledWith(9);
     });
   });
 

@@ -220,6 +220,7 @@ function renderSubmissions(list) {
           <div class="btn-group">
             <a href="submission-detail.html?id=${encodeURIComponent(s.submission_id)}" class="btn btn-secondary btn-sm">View</a>
             <button type="button" class="btn btn-secondary btn-sm" data-action="assign" data-submission-id="${escapeAttr(s.submission_id)}">Assign</button>
+            <button type="button" class="btn btn-danger btn-sm" data-action="delete-submission" data-submission-id="${escapeAttr(s.submission_id)}" data-submission-title="${escapeAttr(s.title)}">Delete</button>
           </div>
         </td>
       </tr>`;
@@ -411,6 +412,48 @@ async function confirmDeleteUser(userId, name) {
   if (result) loadUsers();
 }
 
+/**
+ * Prompts for confirmation, then deletes a submission via
+ * `DELETE /api/submissions/:id`. The schema-level CASCADE handles dependent
+ * rows (files, reviews, assignments, messages); we just refresh the table.
+ *
+ * @async
+ * @param {string} submissionId  Public id, e.g. "KCR-0001".
+ * @param {string} title         Display title used in the confirm prompt.
+ * @returns {Promise<void>}
+ */
+async function confirmDeleteSubmission(submissionId, title) {
+  const warning =
+    `Delete submission "${title}" (#${submissionId})?\n\n` +
+    'This will also permanently remove every record tied to this submission:\n' +
+    '  • all uploaded files\n' +
+    '  • all reviews and ratings\n' +
+    '  • all reviewer assignments\n' +
+    '  • the discussion thread\n\n' +
+    'This cannot be undone.';
+  if (!confirm(warning)) return;
+
+  // Submissions live under /api/submissions, not /api/admin, so fetch the
+  // global apiFetch directly instead of routing through adminFetch.
+  try {
+    const res = await window.apiFetch(
+      `/api/submissions/${encodeURIComponent(submissionId)}`,
+      { method: 'DELETE' }
+    );
+    let body = {};
+    try { body = await res.json(); } catch (e) { /* ignore */ }
+    if (!res.ok) {
+      alert(body.error || `Failed to delete submission (HTTP ${res.status})`);
+      return;
+    }
+    await loadSubmissions();
+    await loadWorkload();
+  } catch (err) {
+    console.error(err);
+    alert('Failed to delete submission');
+  }
+}
+
 // ================================================================
 //  REVIEWER ASSIGNMENTS TAB
 // ================================================================
@@ -503,33 +546,116 @@ let assignTargetSubmissionId = null;
  * @param {string} submissionId  Public submission id (e.g. "KCR-0001").
  * @returns {void}
  */
-function openAssignModal(submissionId) {
+async function openAssignModal(submissionId) {
   assignTargetSubmissionId = submissionId;
   document.getElementById('assignSubmissionLabel').innerHTML =
-    `Select one or more reviewers for submission <strong>#${escapeAttr(submissionId)}</strong>`;
+    `Manage reviewers for submission <strong>#${escapeAttr(submissionId)}</strong>`;
 
   const list = document.getElementById('assignReviewerList');
+  if (!list) return;
 
-  if (workloadData.length === 0) {
-    list.innerHTML = '<p class="text-muted">No reviewers available</p>';
-  } else {
-    list.innerHTML = workloadData.map(r => {
-      const ini   = getInitials(r.first_name, r.last_name);
-      const color = avatarColor(r.id);
-      const count = parseInt(r.assigned_count, 10);
-      return `
-        <label style="display:flex;align-items:center;gap:.75rem;padding:.75rem;border:1px solid var(--border);border-radius:var(--radius);cursor:pointer;">
-          <input type="checkbox" value="${r.id}">
-          <div style="width:32px;height:32px;border-radius:50%;background:${color};display:flex;align-items:center;justify-content:center;color:#fff;font-weight:600;font-size:.7rem;">${ini}</div>
-          <div>
-            <div style="font-weight:600;font-size:.85rem;">${escapeAttr(r.first_name)} ${escapeAttr(r.last_name)}</div>
-            <div class="text-small text-muted">${count} / 10 assignments</div>
-          </div>
-        </label>`;
-    }).join('');
+  // Render an instant skeleton so the modal feels responsive while we
+  // resolve the currently-assigned reviewer list.
+  list.innerHTML = '<p class="text-muted">Loading reviewers\u2026</p>';
+  document.getElementById('assignModal').classList.add('show');
+
+  // Fetch the currently-assigned reviewers so we can show them up top with
+  // a Remove button. The endpoint requires any caller to have permission to
+  // see reviewer identity; admins always do.
+  let assigned = [];
+  try {
+    const res = await window.apiFetch(
+      `/api/submissions/${encodeURIComponent(submissionId)}/reviewers`
+    );
+    if (res && res.ok) assigned = await res.json();
+  } catch (err) {
+    console.error('Failed to load assigned reviewers:', err);
   }
 
-  document.getElementById('assignModal').classList.add('show');
+  const assignedIds = new Set((assigned || []).map(r => r.id));
+  renderAssignModalBody(submissionId, assigned, assignedIds);
+}
+
+// Render two sections inside the Assign Reviewer modal:
+//   1. "Currently assigned" — chips with a Remove (×) button.
+//   2. "Add reviewers" — checkbox list of every reviewer/editor not yet
+//      assigned to this submission, drawn from `workloadData`.
+function renderAssignModalBody(submissionId, assigned, assignedIds) {
+  const list = document.getElementById('assignReviewerList');
+  if (!list) return;
+
+  const assignedHtml = assigned.length === 0
+    ? '<p class="text-muted text-small" style="margin:0;">No reviewers assigned yet.</p>'
+    : assigned.map(r => {
+        const ini   = getInitials(r.first_name, r.last_name);
+        const color = avatarColor(r.id);
+        return `
+          <div style="display:flex;align-items:center;gap:.75rem;padding:.5rem .75rem;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface-alt,#f8fafc);">
+            <div style="width:28px;height:28px;border-radius:50%;background:${color};display:flex;align-items:center;justify-content:center;color:#fff;font-weight:600;font-size:.65rem;">${ini}</div>
+            <div style="flex:1;min-width:0;">
+              <div style="font-weight:600;font-size:.85rem;">${escapeAttr(r.first_name)} ${escapeAttr(r.last_name)}</div>
+              <div class="text-small text-muted">${escapeAttr(r.email)}</div>
+            </div>
+            <button type="button" class="btn btn-danger btn-sm"
+                    data-action="remove-assignment"
+                    data-reviewer-id="${r.id}"
+                    data-reviewer-name="${escapeAttr(r.first_name)} ${escapeAttr(r.last_name)}">Remove</button>
+          </div>`;
+      }).join('');
+
+  // Hide reviewers already assigned from the add list — re-assigning would
+  // just bounce off the unique-constraint 409 anyway.
+  const candidates = (workloadData || []).filter(r => !assignedIds.has(r.id));
+  const addHtml = candidates.length === 0
+    ? '<p class="text-muted text-small" style="margin:0;">Every reviewer is already assigned.</p>'
+    : candidates.map(r => {
+        const ini   = getInitials(r.first_name, r.last_name);
+        const color = avatarColor(r.id);
+        const count = parseInt(r.assigned_count, 10);
+        return `
+          <label style="display:flex;align-items:center;gap:.75rem;padding:.75rem;border:1px solid var(--border);border-radius:var(--radius);cursor:pointer;">
+            <input type="checkbox" value="${r.id}">
+            <div style="width:32px;height:32px;border-radius:50%;background:${color};display:flex;align-items:center;justify-content:center;color:#fff;font-weight:600;font-size:.7rem;">${ini}</div>
+            <div>
+              <div style="font-weight:600;font-size:.85rem;">${escapeAttr(r.first_name)} ${escapeAttr(r.last_name)}</div>
+              <div class="text-small text-muted">${count} / 10 assignments</div>
+            </div>
+          </label>`;
+      }).join('');
+
+  list.innerHTML = `
+    <div style="margin-bottom:1rem;">
+      <div class="text-small" style="font-weight:600;margin-bottom:.5rem;">Currently assigned</div>
+      <div style="display:flex;flex-direction:column;gap:.5rem;">${assignedHtml}</div>
+    </div>
+    <div>
+      <div class="text-small" style="font-weight:600;margin-bottom:.5rem;">Add reviewers</div>
+      <div style="display:flex;flex-direction:column;gap:.5rem;">${addHtml}</div>
+    </div>`;
+
+  // Wire Remove buttons. Each click DELETEs the assignment and re-renders
+  // the modal in place so the admin can keep adjusting.
+  list.querySelectorAll('button[data-action="remove-assignment"]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const reviewerId   = btn.getAttribute('data-reviewer-id');
+      const reviewerName = btn.getAttribute('data-reviewer-name') || 'this reviewer';
+      if (!reviewerId) return;
+      if (!confirm(`Remove ${reviewerName} from #${submissionId}?`)) return;
+
+      const result = await adminFetch(
+        `/assign/${encodeURIComponent(submissionId)}/${encodeURIComponent(reviewerId)}`,
+        { method: 'DELETE' }
+      );
+      if (result && result.__error) {
+        alert(result.message || 'Failed to remove reviewer');
+        return;
+      }
+      // Refresh both the modal and the workload tab so reviewer load
+      // counts stay in sync with reality.
+      await loadWorkload();
+      await openAssignModal(submissionId);
+    });
+  });
 }
 
 /**
@@ -710,10 +836,18 @@ document.addEventListener('DOMContentLoaded', () => {
   // ---- Delegated handlers for dynamically-rendered table rows ----
 
   document.getElementById('submissions-tbody')?.addEventListener('click', (e) => {
-    const btn = e.target.closest('button[data-action="assign"]');
-    if (!btn) return;
-    const id = btn.getAttribute('data-submission-id');
-    if (id) openAssignModal(id);
+    const assignBtn = e.target.closest('button[data-action="assign"]');
+    if (assignBtn) {
+      const id = assignBtn.getAttribute('data-submission-id');
+      if (id) openAssignModal(id);
+      return;
+    }
+    const delBtn = e.target.closest('button[data-action="delete-submission"]');
+    if (delBtn) {
+      const id    = delBtn.getAttribute('data-submission-id');
+      const title = delBtn.getAttribute('data-submission-title') || id;
+      if (id) confirmDeleteSubmission(id, title);
+    }
   });
 
   document.getElementById('users-tbody')?.addEventListener('click', (e) => {

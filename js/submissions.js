@@ -170,23 +170,35 @@ function renderSubmissionsTable(list) {
     return;
   }
 
-  tbody.innerHTML = list.map(sub => `
-    <tr>
-      <td><strong>#${escapeHtml(sub.submission_id)}</strong></td>
-      <td>${escapeHtml(sub.title || 'Untitled')}</td>
-      <td>${escapeHtml(sub.genre || '\u2014')}</td>
-      <td>${escapeHtml(sub.word_count || '\u2014')}</td>
-      <td>${formatDate(sub.created_at)}</td>
-      <td>${statusBadge(sub.status)}</td>
-      <td>${renderStars(sub.avg_rating)}</td>
-      <td>
-        <div class="btn-group">
-          <a href="submission-detail.html?id=${encodeURIComponent(sub.submission_id)}" class="btn btn-secondary btn-sm">View</a>
-          <a href="messages.html?submission=${encodeURIComponent(sub.submission_id)}" class="btn btn-secondary btn-sm">&#9993;</a>
-        </div>
-      </td>
-    </tr>
-  `).join('');
+  tbody.innerHTML = list.map(sub => {
+    // Submitters can only delete their own submission while it's still
+    // pending — once a reviewer touches it, the row stays put and an admin
+    // has to remove it.
+    const canDelete = sub.status === 'pending';
+    const deleteBtn = canDelete
+      ? `<button type="button" class="btn btn-danger btn-sm"
+                 data-action="delete-submission"
+                 data-submission-id="${escapeHtml(sub.submission_id)}"
+                 data-submission-title="${escapeHtml(sub.title || 'Untitled')}">Delete</button>`
+      : '';
+    return `
+      <tr>
+        <td><strong>#${escapeHtml(sub.submission_id)}</strong></td>
+        <td>${escapeHtml(sub.title || 'Untitled')}</td>
+        <td>${escapeHtml(sub.genre || '\u2014')}</td>
+        <td>${escapeHtml(sub.word_count || '\u2014')}</td>
+        <td>${formatDate(sub.created_at)}</td>
+        <td>${statusBadge(sub.status)}</td>
+        <td>${renderStars(sub.avg_rating)}</td>
+        <td>
+          <div class="btn-group">
+            <a href="submission-detail.html?id=${encodeURIComponent(sub.submission_id)}" class="btn btn-secondary btn-sm">View</a>
+            <a href="messages.html?submission=${encodeURIComponent(sub.submission_id)}" class="btn btn-secondary btn-sm">&#9993;</a>
+            ${deleteBtn}
+          </div>
+        </td>
+      </tr>`;
+  }).join('');
 
   const count = document.getElementById('submissions-count');
   if (count) count.textContent = `Showing ${list.length} of ${mySubmissions.length} submissions`;
@@ -315,6 +327,38 @@ function renderSubmissionDetail(sub) {
   if (decisionCard && user && user.role !== 'admin' && user.role !== 'editor') {
     decisionCard.style.display = 'none';
   }
+
+  renderDetailDeleteButton(sub, user);
+}
+
+// Show a Delete button in the detail-page top bar when the current user is
+// allowed to remove this submission. Admins can always delete; the author
+// can delete while it's still `pending`. Everyone else gets nothing.
+function renderDetailDeleteButton(sub, user) {
+  const topBarActions = document.querySelector('.top-bar .top-bar-actions');
+  if (!topBarActions) return;
+  const existing = document.getElementById('delete-submission-btn');
+  if (existing) existing.remove();
+  if (!sub || !user) return;
+
+  const isAdmin  = user.role === 'admin';
+  const isAuthor = sub.user_id === user.id;
+  const canAuthorDelete = isAuthor && sub.status === 'pending';
+  if (!isAdmin && !canAuthorDelete) return;
+
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.id = 'delete-submission-btn';
+  btn.className = 'btn btn-danger btn-sm';
+  btn.textContent = 'Delete Submission';
+  btn.addEventListener('click', () => {
+    deleteSubmission(sub.submission_id, {
+      friendlyTitle: sub.title,
+      // Pop the user back to whichever list makes sense for their role.
+      redirectAfter: isAdmin ? 'admin.html' : 'submissions.html',
+    });
+  });
+  topBarActions.insertBefore(btn, topBarActions.firstChild);
 }
 
 // Fetch a submission file as a blob via the authenticated API and return an
@@ -513,6 +557,45 @@ async function loadSubmissionFiles(id) {
   }
 }
 
+// Send DELETE /api/submissions/:id, refresh the relevant view, and surface
+// useful error messages (e.g. "submission already in review").
+async function deleteSubmission(submissionId, opts = {}) {
+  const { redirectAfter, friendlyTitle, skipConfirm } = opts;
+  const label = friendlyTitle ? `"${friendlyTitle}"` : `#${submissionId}`;
+  if (!skipConfirm) {
+    const ok = confirm(
+      `Delete submission ${label}?\n\n` +
+      `This permanently removes the submission, every uploaded file, all reviews, ` +
+      `assignments, and any discussion messages. This cannot be undone.`
+    );
+    if (!ok) return false;
+  }
+
+  try {
+    const res = await apiFetch(`/api/submissions/${encodeURIComponent(submissionId)}`, {
+      method: 'DELETE',
+    });
+    let body = {};
+    try { body = await res.json(); } catch (e) { /* ignore */ }
+
+    if (!res.ok) {
+      alert(body.error || `Failed to delete submission (HTTP ${res.status})`);
+      return false;
+    }
+
+    if (redirectAfter) {
+      window.location.href = redirectAfter;
+    } else {
+      await loadMySubmissions();
+    }
+    return true;
+  } catch (err) {
+    console.error('Failed to delete submission:', err);
+    alert('Failed to delete submission');
+    return false;
+  }
+}
+
 async function setDecision(status) {
   const id = getQueryId();
   if (!id) return;
@@ -634,6 +717,17 @@ document.addEventListener('DOMContentLoaded', () => {
   // Wire decision buttons (data-decision="accepted|rejected|pending")
   document.querySelectorAll('[data-decision]').forEach(btn => {
     btn.addEventListener('click', () => setDecision(btn.getAttribute('data-decision')));
+  });
+
+  // Delegated handler for the per-row Delete button on My Submissions.
+  // The table is re-rendered on every filter/sort, so we attach to the
+  // tbody once and dispatch from there.
+  document.getElementById('my-submissions-tbody')?.addEventListener('click', (e) => {
+    const btn = e.target.closest('button[data-action="delete-submission"]');
+    if (!btn) return;
+    const id = btn.getAttribute('data-submission-id');
+    const title = btn.getAttribute('data-submission-title');
+    if (id) deleteSubmission(id, { friendlyTitle: title });
   });
 });
 

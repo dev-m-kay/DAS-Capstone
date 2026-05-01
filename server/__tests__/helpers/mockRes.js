@@ -18,6 +18,12 @@ function mockRes() {
     res.body = payload;
     return res;
   });
+  res.end = jest.fn(function (payload) {
+    if (payload !== undefined) res.body = payload;
+    return res;
+  });
+  res.setHeader = jest.fn();
+  res.sendFile = jest.fn();
   return res;
 }
 

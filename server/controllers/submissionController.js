@@ -6,6 +6,15 @@ const { canAccessSubmission } = require('../middleware/access');
 
 const UPLOAD_DIR = path.join(__dirname, '..', '..', 'uploads');
 
+// Generate a stable, traversal-proof filename for a freshly-uploaded file.
+// Multer's memoryStorage doesn't assign one, and we still need a unique
+// per-file identifier for the URL `/api/submissions/:id/files/:filename`.
+function generateStoredFilename(originalName) {
+  const ext = path.extname(originalName || '').toLowerCase();
+  const unique = Date.now() + '-' + Math.round(Math.random() * 1e6);
+  return unique + ext;
+}
+
 exports.create = async (req, res) => {
   try {
     const user_id = req.user.id;
@@ -18,10 +27,14 @@ exports.create = async (req, res) => {
     const submission_id = await Submission.nextSubmissionID();
 
     const filesPayload = (req.files || []).map(file => ({
-      filename: file.filename,
+      // Multer memoryStorage exposes the bytes as `file.buffer`. We keep a
+      // synthetic `filename` so the existing `/files/:filename` URL keeps
+      // working as a stable per-file identifier.
+      filename: generateStoredFilename(file.originalname),
       original_name: file.originalname,
       mimetype: file.mimetype,
       size: file.size,
+      data: file.buffer,
     }));
 
     const { submission } = await Submission.createWithFiles(
@@ -33,13 +46,7 @@ exports.create = async (req, res) => {
 
   } catch (error) {
     console.error("Create Submission Error:", error);
-    // Best-effort: if the DB insert failed, clean up any uploaded blobs so
-    // we don't leave orphaned files on disk.
-    if (req.files && req.files.length) {
-      for (const f of req.files) {
-        fs.unlink(path.join(UPLOAD_DIR, f.filename), () => {});
-      }
-    }
+    // memoryStorage means there's nothing to clean up on disk on failure.
     res.status(500).json({ error: "Failed to create submission" });
   }
 };
@@ -103,6 +110,11 @@ exports.getFiles = async (req, res) => {
 // filename is matched both against the submission and the on-disk path is
 // resolved with safety checks so a path-traversal value can't escape the
 // uploads directory.
+//
+// Newly-uploaded files are served straight from `submission_files.data`
+// (BYTEA) so they're available across every server instance. Rows that
+// pre-date the DB-backed storage have `data = NULL`; for those we fall
+// back to streaming from /uploads.
 exports.downloadFile = async (req, res) => {
   try {
     const submission = await Submission.findBySubmissionId(req.params.id);
@@ -124,17 +136,6 @@ exports.downloadFile = async (req, res) => {
       return res.status(404).json({ error: "File not found" });
     }
 
-    const fullPath = path.join(UPLOAD_DIR, requested);
-    // Resolve and confirm the final path is still inside UPLOAD_DIR.
-    const resolved = path.resolve(fullPath);
-    if (!resolved.startsWith(path.resolve(UPLOAD_DIR) + path.sep)) {
-      return res.status(400).json({ error: "Invalid path" });
-    }
-
-    if (!fs.existsSync(resolved)) {
-      return res.status(404).json({ error: "File missing on disk" });
-    }
-
     res.setHeader('Content-Type', file.mimetype || 'application/octet-stream');
     // Force download for non-PDF/image types to avoid HTML being executed in
     // the user's browser when previewed by name.
@@ -144,10 +145,79 @@ exports.downloadFile = async (req, res) => {
       'Content-Disposition',
       `${disposition}; filename="${encodeURIComponent(file.original_name)}"`
     );
+
+    if (file.data && Buffer.isBuffer(file.data) && file.data.length > 0) {
+      res.setHeader('Content-Length', file.data.length);
+      return res.end(file.data);
+    }
+
+    // Legacy fallback: row was created before bytes were stored in the DB.
+    const fullPath = path.join(UPLOAD_DIR, requested);
+    const resolved = path.resolve(fullPath);
+    if (!resolved.startsWith(path.resolve(UPLOAD_DIR) + path.sep)) {
+      return res.status(400).json({ error: "Invalid path" });
+    }
+    if (!fs.existsSync(resolved)) {
+      return res.status(404).json({ error: "File missing on disk" });
+    }
     res.sendFile(resolved);
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Failed to download file" });
+  }
+};
+
+// `DELETE /api/submissions/:id` — Removes a submission and every record
+// that hangs off it (files, reviews, messages, assignments) via schema-level
+// ON DELETE CASCADE.
+//
+// Authorization:
+//   - admin: can delete any submission.
+//   - submitter (the author): only while the submission is still `pending`,
+//     i.e. before any review activity has happened.
+//   - everyone else: 403.
+exports.delete = async (req, res) => {
+  try {
+    const submission = await Submission.findBySubmissionId(req.params.id);
+    if (!submission) {
+      return res.status(404).json({ error: "Submission not found" });
+    }
+
+    const role = req.user.role;
+    if (role !== 'admin') {
+      if (submission.user_id !== req.user.id) {
+        return res.status(403).json({ error: "Forbidden" });
+      }
+      if (submission.status !== 'pending') {
+        return res.status(409).json({
+          error: "Only pending submissions can be deleted by their author. " +
+                 "Once review has started, please contact an admin."
+        });
+      }
+    }
+
+    // Capture filenames so we can best-effort clean up legacy disk uploads
+    // after the row goes away. New uploads live in the DB and disappear
+    // automatically via ON DELETE CASCADE.
+    let legacyFilenames = [];
+    try {
+      const files = await Submission.getFiles(submission.id);
+      legacyFilenames = (files || []).map(f => f.filename);
+    } catch (lookupErr) {
+      console.error('delete submission: file lookup failed (continuing):', lookupErr);
+    }
+
+    await Submission.deleteById(submission.id);
+
+    for (const filename of legacyFilenames) {
+      if (!filename || filename.includes('/') || filename.includes('\\') || filename.includes('..')) continue;
+      fs.unlink(path.join(UPLOAD_DIR, filename), () => {});
+    }
+
+    res.json({ message: "Submission deleted" });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Failed to delete submission" });
   }
 };
 

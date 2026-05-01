@@ -277,7 +277,7 @@ Real-time delivery uses Socket.IO rooms:
 | Backend | Node.js, Express |
 | Database | PostgreSQL on Supabase |
 | Auth | JWT (jsonwebtoken) + bcryptjs |
-| File Upload | Multer (stored in `/uploads`, served via authenticated route) |
+| File Upload | Multer (memoryStorage) → bytes stored in `submission_files.data` (BYTEA), served via authenticated route |
 | Real-time | Socket.IO (live message threads) |
 | Security | Helmet, express-rate-limit, restricted CORS |
 | Testing | Jest |
@@ -309,7 +309,9 @@ Each HTML page is paired with a JS module under `js/` that calls the backend:
 - Tables are created automatically on first `npm start` — no manual SQL needed.
 - The `.env` file is **required** — the server won't start without `DATABASE_URL`.
 - The JWT token is stored in `localStorage` under the key `authToken`; clearing it (or the **Sign Out** button) logs you out.
-- Uploaded files are stored in the `uploads/` folder and served only via the authenticated route `GET /api/submissions/:id/files/:filename` (with the same access check as the submission itself). The `uploads/` folder is *not* exposed as a static directory.
+- Uploaded files are stored in the database (`submission_files.data`, BYTEA) so every server instance can serve every file. They are returned only via the authenticated route `GET /api/submissions/:id/files/:filename`, which enforces the same access check as the submission itself. Legacy rows from before this change have `data = NULL`; the download route falls back to streaming them from `uploads/` for backward compatibility, but new uploads never touch disk.
+- **Deleting submissions**: `DELETE /api/submissions/:id` is available to **admins** (any submission, any status) and to the **author** of a submission as long as it is still `pending`. The schema-level `ON DELETE CASCADE` automatically removes every linked file, review, assignment, and discussion message; legacy disk uploads are best-effort cleaned up. The Delete buttons appear on `submissions.html` (My Submissions, pending only), the submission detail page (top bar), and the admin Submissions table.
+- **Removing reviewer assignments**: opening the admin **Manage Reviewers** modal now lists the currently-assigned reviewers with a Remove button next to each, calling `DELETE /api/admin/assign/:submissionId/:reviewerId`. The "Add reviewers" picker hides anyone already on the panel.
 - Real-time messages require the Socket.IO client served at `/socket.io/socket.io.js` — already included by Express when Socket.IO is mounted.
 - **In-browser file previews** on the submission detail page support every supported upload format: PDFs render in an iframe (blob URL), images (PNG / JPG / JPEG) render as `<img>`, and `.docx` files are converted to HTML on the client by [mammoth](https://www.npmjs.com/package/mammoth). The mammoth bundle is served at `/js/lib/mammoth.browser.min.js` from `node_modules`. Click any file in the file list to swap it into the preview pane; hold **Shift+Click** to download instead.
 - **Discussion preview**: the submission detail page shows the last few messages of the discussion as a read-only preview. Clicking the card (or pressing Enter while focused) navigates to `messages.html?id=KCR-XXXX`, which auto-selects that submission's thread for composing.
