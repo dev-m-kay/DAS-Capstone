@@ -4,7 +4,7 @@ A web-based submission management platform for the KCR literary magazine. Suppor
 
 ---
 ## Milestone 5 Specific
-For this milestone, the static HTML pages have been wired to the live API. Login, registration, submissions, reviews, messages (with Socket.IO real-time updates), and the admin panel are all driven by backend data instead of placeholder content.
+For this milestone, the static HTML pages have been wired to the live API. Login, registration, submissions, reviews, messages (with Socket.IO real-time updates), and the admin panel are all driven by backend data instead of placeholder content. Numerous bug fixes and automated testing added. Completed a thorough audit and restructered headers to enhance security. 
 
 ## Milestone 4 Specific
 For this milestone, all backend has been implemented and should be merged to main.
