@@ -6,7 +6,7 @@ jest.mock('../../middleware/access');
 const Message = require('../../models/Message');
 const Submission = require('../../models/Submission');
 const User = require('../../models/User');
-const { canAccessSubmission } = require('../../middleware/access');
+const { canDiscussSubmission } = require('../../middleware/access');
 const messageController = require('../../controllers/messageController');
 const { mockRes } = require('../helpers/mockRes');
 
@@ -47,7 +47,7 @@ describe('controllers/messageController', () => {
 
     test('403 when user cannot access submission', async () => {
       Submission.findBySubmissionId.mockResolvedValue({ id: 1, user_id: 99 });
-      canAccessSubmission.mockResolvedValue(false);
+      canDiscussSubmission.mockResolvedValue(false);
       const res = mockRes();
       await messageController.send(baseReq(), res);
       expect(res.status).toHaveBeenCalledWith(403);
@@ -55,7 +55,7 @@ describe('controllers/messageController', () => {
 
     test('201 returns enriched message and trims the body', async () => {
       Submission.findBySubmissionId.mockResolvedValue({ id: 1, submission_id: 'KCR-0001', user_id: 4 });
-      canAccessSubmission.mockResolvedValue(true);
+      canDiscussSubmission.mockResolvedValue(true);
       Message.create.mockResolvedValue({
         id: 10, submission_id: 1, sender_id: 4, body: 'hello there',
       });
@@ -84,7 +84,7 @@ describe('controllers/messageController', () => {
 
     test('emits new_message to the submission_id room when io is available', async () => {
       Submission.findBySubmissionId.mockResolvedValue({ id: 1, submission_id: 'KCR-0001', user_id: 4 });
-      canAccessSubmission.mockResolvedValue(true);
+      canDiscussSubmission.mockResolvedValue(true);
       Message.create.mockResolvedValue({
         id: 10, submission_id: 1, sender_id: 4, body: 'hi',
       });
@@ -122,7 +122,7 @@ describe('controllers/messageController', () => {
 
     test('403 when no access', async () => {
       Submission.findBySubmissionId.mockResolvedValue({ id: 1, user_id: 99 });
-      canAccessSubmission.mockResolvedValue(false);
+      canDiscussSubmission.mockResolvedValue(false);
       const req = { params: { submissionId: 'KCR-0001' }, user: { id: 1 } };
       const res = mockRes();
       await messageController.getForSubmission(req, res);
@@ -131,7 +131,7 @@ describe('controllers/messageController', () => {
 
     test('returns messages when allowed', async () => {
       Submission.findBySubmissionId.mockResolvedValue({ id: 1, user_id: 1 });
-      canAccessSubmission.mockResolvedValue(true);
+      canDiscussSubmission.mockResolvedValue(true);
       Message.findBySubmission.mockResolvedValue([{ id: 1, body: 'hi' }]);
       const req = { params: { submissionId: 'KCR-0001' }, user: { id: 1 } };
       const res = mockRes();

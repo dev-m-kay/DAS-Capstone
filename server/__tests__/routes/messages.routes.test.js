@@ -10,7 +10,7 @@ const request = require('supertest');
 const Message = require('../../models/Message');
 const Submission = require('../../models/Submission');
 const User = require('../../models/User');
-const { canAccessSubmission } = require('../../middleware/access');
+const { canDiscussSubmission } = require('../../middleware/access');
 const app = require('../../app');
 const { generateToken } = require('../../middleware/auth');
 
@@ -35,18 +35,19 @@ describe('routes/messages', () => {
       expect(res.status).toBe(401);
     });
 
-    test('200 returns the unified threads list', async () => {
+    test('200 returns the unified threads list for staff', async () => {
       Message.getThreadsForUser.mockResolvedValue([{
-        id: 1, body: 'hi', created_at: 't', sender_id: 4,
-        first_name: 'S', last_name: 'B', role: 'submitter',
+        id: 1, body: 'hi', created_at: 't', sender_id: 7,
+        first_name: 'A', last_name: 'B', role: 'reviewer',
         title: 'My Submission', submission_id: 'KCR-0001',
       }]);
       const res = await request(app)
         .get('/api/messages/threads')
-        .set('Authorization', `Bearer ${submitterToken}`);
+        .set('Authorization', `Bearer ${reviewerToken}`);
       expect(res.status).toBe(200);
-      expect(Message.getThreadsForUser).toHaveBeenCalledWith(4, 'submitter');
-      expect(res.body[0]).toEqual(expect.objectContaining({
+      expect(Message.getThreadsForUser).toHaveBeenCalledWith(7, 'reviewer');
+      // Staff Lounge is pinned at the top; submission thread is next.
+      expect(res.body[1]).toEqual(expect.objectContaining({
         kind: 'submission',
         key: 'KCR-0001',
       }));
@@ -58,6 +59,23 @@ describe('routes/messages', () => {
         .set('Authorization', `Bearer ${reviewerToken}`);
       expect(res.status).toBe(200);
       expect(res.body[0]).toEqual(expect.objectContaining({ kind: 'staff' }));
+    });
+
+    test('submitter never sees submission discussion threads', async () => {
+      // Even if the model would return rows for this user (it shouldn't —
+      // we short-circuit in the model — but test the controller too), the
+      // controller skips the submission-threads block entirely for non-staff.
+      Message.getThreadsForUser.mockResolvedValue([{
+        id: 1, body: 'hi', created_at: 't', sender_id: 4,
+        first_name: 'S', last_name: 'B', role: 'submitter',
+        title: 'My Submission', submission_id: 'KCR-0001',
+      }]);
+      const res = await request(app)
+        .get('/api/messages/threads')
+        .set('Authorization', `Bearer ${submitterToken}`);
+      expect(res.status).toBe(200);
+      expect(res.body.find((t) => t.kind === 'submission')).toBeUndefined();
+      expect(res.body.find((t) => t.kind === 'staff')).toBeUndefined();
     });
   });
 
@@ -120,7 +138,7 @@ describe('routes/messages', () => {
 
     test('403 when not authorized', async () => {
       Submission.findBySubmissionId.mockResolvedValue({ id: 1, user_id: 99 });
-      canAccessSubmission.mockResolvedValue(false);
+      canDiscussSubmission.mockResolvedValue(false);
       const res = await request(app)
         .get('/api/messages/KCR-0001')
         .set('Authorization', `Bearer ${submitterToken}`);
@@ -129,7 +147,7 @@ describe('routes/messages', () => {
 
     test('200 returns messages when allowed', async () => {
       Submission.findBySubmissionId.mockResolvedValue({ id: 1, user_id: 4 });
-      canAccessSubmission.mockResolvedValue(true);
+      canDiscussSubmission.mockResolvedValue(true);
       Message.findBySubmission.mockResolvedValue([{ id: 1, body: 'hi' }]);
 
       const res = await request(app)
@@ -160,7 +178,7 @@ describe('routes/messages', () => {
 
     test('403 when no access', async () => {
       Submission.findBySubmissionId.mockResolvedValue({ id: 1, user_id: 99 });
-      canAccessSubmission.mockResolvedValue(false);
+      canDiscussSubmission.mockResolvedValue(false);
       const res = await request(app)
         .post('/api/messages/KCR-0001')
         .set('Authorization', `Bearer ${reviewerToken}`)
@@ -170,7 +188,7 @@ describe('routes/messages', () => {
 
     test('201 returns enriched message when allowed', async () => {
       Submission.findBySubmissionId.mockResolvedValue({ id: 1, submission_id: 'KCR-0001', user_id: 4 });
-      canAccessSubmission.mockResolvedValue(true);
+      canDiscussSubmission.mockResolvedValue(true);
       Message.create.mockResolvedValue({
         id: 22, submission_id: 1, sender_id: 4, body: 'hello',
       });

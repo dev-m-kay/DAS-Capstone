@@ -1,7 +1,7 @@
 const messageModel = require('../models/Message');
 const Submission = require('../models/Submission');
 const User = require('../models/User');
-const { canAccessSubmission } = require('../middleware/access');
+const { canDiscussSubmission } = require('../middleware/access');
 
 // Defined locally rather than imported from the model so jest auto-mocks of
 // `../models/Message` don't wipe these constants out at test time.
@@ -28,7 +28,7 @@ exports.send = async (req, res) => {
         if (!submission) {
             return res.status(404).json({ error: "Submission not found" });
         }
-        if (!(await canAccessSubmission(req.user, submission))) {
+        if (!(await canDiscussSubmission(req.user, submission))) {
             return res.status(403).json({ error: "Forbidden" });
         }
 
@@ -70,7 +70,7 @@ exports.getForSubmission = async (req, res) => {
         if (!submission) {
             return res.status(404).json({ error: "Submission not found" });
         }
-        if (!(await canAccessSubmission(req.user, submission))) {
+        if (!(await canDiscussSubmission(req.user, submission))) {
             return res.status(403).json({ error: "Forbidden" });
         }
         const messages = await messageModel.findBySubmission(submission.id);
@@ -119,22 +119,27 @@ exports.getMyThreads = async (req, res) => {
         }
 
         // 2. Submission discussions
-        const subThreads = await messageModel.getThreadsForUser(me.id, me.role);
-        for (const t of subThreads) {
-            threads.push({
-                kind: 'submission',
-                key: t.submission_id,
-                title: `#${t.submission_id} — ${t.title || 'Untitled'}`,
-                subtitle: 'Submission discussion',
-                body: t.body,
-                created_at: t.created_at,
-                sender: {
-                    id: t.sender_id,
-                    first_name: t.first_name,
-                    last_name: t.last_name,
-                    role: t.role,
-                },
-            });
+        //    Submission discussions are STAFF-ONLY — the submitting author
+        //    must not see them, even on their own submission. So we only
+        //    populate this section for staff users.
+        if (isStaff(me)) {
+            const subThreads = await messageModel.getThreadsForUser(me.id, me.role);
+            for (const t of subThreads) {
+                threads.push({
+                    kind: 'submission',
+                    key: t.submission_id,
+                    title: `#${t.submission_id} — ${t.title || 'Untitled'}`,
+                    subtitle: 'Submission discussion',
+                    body: t.body,
+                    created_at: t.created_at,
+                    sender: {
+                        id: t.sender_id,
+                        first_name: t.first_name,
+                        last_name: t.last_name,
+                        role: t.role,
+                    },
+                });
+            }
         }
 
         // 3. Direct-message conversations

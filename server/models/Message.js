@@ -29,17 +29,21 @@ const messageModel = {
     },
 
     // message threads for a user / the latest message for each submission
-    // that they either submitted or are assigned to review.
+    // discussion they're allowed to see.
     //
-    // For admin / editor we return EVERY submission thread with at least one
-    // message — they need full visibility for moderation. Everyone else gets
-    // only threads where they are the author or an assigned reviewer.
+    // Submission discussions are staff-only:
+    //   - admin / editor : every submission thread with at least one message
+    //   - reviewer       : only threads for submissions they're assigned to
+    //   - submitter      : NOTHING (they can't see staff discussions of
+    //                      their own work, so we just return [])
     //
     // We deliberately return s.submission_id (the human-readable "KCR-XXXX"
     // code) as `submission_id` rather than the integer FK on m, because the
     // frontend uses this value both for URL building and for Socket.IO room
     // names (kept consistent with messageController.send).
     async getThreadsForUser(user_id, role) {
+        if (role === 'submitter' || !role) return [];
+
         const isPrivileged = role === 'admin' || role === 'editor';
 
         const baseSelect = `
@@ -58,11 +62,8 @@ const messageModel = {
         const sql = isPrivileged
             ? `${baseSelect} ORDER BY m.created_at DESC`
             : `${baseSelect}
-               AND (
-                   s.user_id = $1
-                   OR m.submission_id IN (
-                       SELECT submission_id FROM assignments WHERE reviewer_id = $1
-                   )
+               AND m.submission_id IN (
+                   SELECT submission_id FROM assignments WHERE reviewer_id = $1
                )
                ORDER BY m.created_at DESC`;
 

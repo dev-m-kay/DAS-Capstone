@@ -3,7 +3,7 @@ const jwt = require('jsonwebtoken');
 const { JWT_SECRET } = require('./middleware/auth');
 const Submission = require('./models/Submission');
 const User = require('./models/User');
-const { canAccessSubmission } = require('./middleware/access');
+const { canDiscussSubmission } = require('./middleware/access');
 const { _helpers } = require('./controllers/messageController');
 
 const STAFF_ROLES = ['admin', 'editor', 'reviewer'];
@@ -53,7 +53,7 @@ function setupSocket(httpServer) {
             try {
                 const submission = await Submission.findBySubmissionId(String(submissionId));
                 if (!submission) return;
-                if (!(await canAccessSubmission(socket.user, submission))) {
+                if (!(await canDiscussSubmission(socket.user, submission))) {
                     socket.emit('error', { message: 'Forbidden' });
                     return;
                 }

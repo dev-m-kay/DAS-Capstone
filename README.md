@@ -203,8 +203,10 @@ All API routes are prefixed with `/api`. Protected routes require a `Bearer` tok
 The messaging system surfaces three kinds of conversations in one unified
 threads list (`GET /api/messages/threads`):
 
-- **Submission discussions** — one thread per submission, scoped to the
-  author + assigned reviewers + admins/editors.
+- **Submission discussions** — one thread per submission for staff to talk
+  *about* the work. Visible to admin/editor and reviewers assigned to that
+  submission. The submitting author is **deliberately excluded** so reviewers
+  and editors can speak candidly.
 - **Staff Lounge** — a single shared channel for every staff member
   (admin, editor, reviewer). Pinned at the top of the list for staff.
 - **Direct messages** — 1-on-1 between any two staff members. Admins
@@ -212,15 +214,15 @@ threads list (`GET /api/messages/threads`):
 
 | Method | Endpoint | Body | Access |
 |--------|----------|------|--------|
-| GET | `/api/messages/threads` | — | Logged in (admin/editor see every submission thread) |
+| GET | `/api/messages/threads` | — | Logged in (admin/editor see every submission thread; submitters see no submission threads) |
 | GET | `/api/messages/staff` | — | Admin / Editor / Reviewer |
 | POST | `/api/messages/staff` | `{ body }` | Admin / Editor / Reviewer |
 | GET | `/api/messages/staff-users` | — | Admin / Editor / Reviewer (DM picker) |
 | GET | `/api/messages/dm/:peerId` | — | Staff (admin can DM anyone) |
 | POST | `/api/messages/dm/:peerId` | `{ body }` | Staff (admin can DM anyone) |
 | GET | `/api/messages/dm-pair/:a/:b` | — | Admin only (DM moderation) |
-| GET | `/api/messages/:submissionId` | — | Submission author / assigned reviewer / admin / editor |
-| POST | `/api/messages/:submissionId` | `{ body }` | Submission author / assigned reviewer / admin / editor |
+| GET | `/api/messages/:submissionId` | — | Admin / editor / assigned reviewer (the submitting author is **excluded** — see below) |
+| POST | `/api/messages/:submissionId` | `{ body }` | Admin / editor / assigned reviewer (the submitting author is **excluded**) |
 
 Real-time delivery uses Socket.IO rooms:
 - `staff-lounge` — joined automatically on connect for any staff user.
@@ -263,7 +265,7 @@ Real-time delivery uses Socket.IO rooms:
 - **Rate limiting:** `POST /api/auth/login` is capped at 10 attempts per IP per 15 minutes; `POST /api/auth/register` at 10 per IP per hour. Limiters are bypassed in tests (`NODE_ENV=test`).
 - **File uploads:** Filtered by both extension *and* MIME type, capped at 25 MB. Stored filenames are random and never derived from client-provided paths. Files are served only via the authenticated `GET /api/submissions/:id/files/:filename` route — never as a static directory — and path traversal in the `:filename` segment is rejected.
 - **Submission create:** The submission row and its file rows are inserted in a single transaction so a partial failure can't orphan a row. Multer-uploaded blobs are best-effort cleaned up if the DB insert fails.
-- **Socket.IO:** JWT-authenticated handshake. `join_thread` is authorized against `canAccessSubmission` so a logged-in user can't subscribe to a submission they don't have access to.
+- **Socket.IO:** JWT-authenticated handshake. `join_thread` is authorized against `canDiscussSubmission` so only admin/editor/assigned-reviewer can subscribe to a submission's discussion. The submitting author is excluded by design — submission discussions are an internal staff conversation.
 - **XSS:** All user-supplied strings rendered to the DOM (titles, genres, author names, etc.) are HTML-escaped on the client before insertion.
 - **Reviewer anonymity:** `GET /api/submissions/:id/reviewers` is restricted to admins, editors, and reviewers actually assigned to the submission. The submission's *author* receives a `403`, so a submitter can never enumerate which reviewers are evaluating their work.
 

@@ -126,11 +126,20 @@
     const submissionId = getQueryParam('id') || getQueryParam('submission');
     if (!submissionId) return;
 
+    // The submission discussion is a staff-only thread (admin / editor /
+    // assigned reviewer). The submitting author must not see it on their
+    // own submission detail page.
+    const me = (typeof getUser === 'function') ? getUser() : null;
+    const card = document.getElementById('discussion-card');
+    if (!me || me.role === 'submitter') {
+      if (card) card.style.display = 'none';
+      return;
+    }
+
     activeSubmissionId = submissionId;
 
     loadDiscussion(submissionId);
 
-    const card = document.getElementById('discussion-card');
     if (card) {
       const goToMessages = function () {
         window.location.href = 'messages.html?id=' + encodeURIComponent(submissionId);
