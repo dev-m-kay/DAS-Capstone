@@ -1,720 +1,611 @@
 /**
- * Messages UI — handles three thread kinds in one place:
- *
- *   submission  : per-submission discussion (key = "KCR-XXXX")
- *   staff       : the shared Staff Lounge   (key = "staff")
- *   dm          : 1-on-1 direct message     (key = "dm:<peerId>" or
- *                                                  "dm:<aId>:<bId>" for admin)
- *
- * The whole module runs inside an IIFE so its top-level identifiers (like
- * AVATAR_COLORS) don't collide with the same names declared in reviews.js
- * when both files are loaded on submission-detail.html.
+ * @file messages.js
+ * @description Powers the discussion panel on the submission detail page
+ * (submission-detail.html) and the full messages thread page (messages.html),
+ * including the Socket.IO real-time client.
+ * Uses the shared apiFetch(), getUser(), and getToken() helpers from app.js.
+ * Page-specific code is guarded by container checks so it is safe to
+ * include on multiple pages.
  */
-(function () {
-  'use strict';
 
-  // ---------- State ---------------------------------------------------------
+// ---- State ----
 
-  let socket = null;
-  let threads = [];
+/** @type {Object|null} Socket.IO connection instance, lazily initialized */
+let socket = null;
 
-  /** @type {{ kind: string, key: string, peerId?: number|null } | null} */
-  let activeThread = null;
+/** @type {Array<Object>} Cached threads list for messages.html */
+let threads = [];
 
-  // Submission-detail page tracks just the submission_id directly.
-  let activeSubmissionId = null;
+/** @type {string|null} Currently viewed thread's submission ID */
+let activeSubmissionId = null;
 
-  // ---------- Helpers -------------------------------------------------------
+// ---- Helpers ----
 
-  const AVATAR_COLORS = [
-    'var(--primary)', 'var(--success)', 'var(--danger)', '#7c3aed',
-    'var(--warning)', '#0ea5e9', '#ec4899', '#14b8a6',
-  ];
+/** @type {string[]} Color palette for avatar circles, matching reviews.js */
+const AVATAR_COLORS = [
+  'var(--primary)', 'var(--success)', 'var(--danger)', '#7c3aed',
+  'var(--warning)', '#0ea5e9', '#ec4899', '#14b8a6',
+];
 
-  function getInitials(name) {
-    if (!name) return '??';
-    const parts = String(name).trim().split(/\s+/);
-    const first = parts[0] ? parts[0][0] : '';
-    const last = parts.length > 1 ? parts[parts.length - 1][0] : '';
-    return (first + last).toUpperCase();
-  }
+/**
+ * Extract initials from a full name (first letter of first and last word).
+ * @param {string} name - Full name string
+ * @returns {string} Two-character uppercase initials, or '??' if name is falsy
+ */
+function getInitials(name) {
+  if (!name) return '??';
+  var parts = name.trim().split(/\s+/);
+  var first = parts[0] ? parts[0][0] : '';
+  var last = parts.length > 1 ? parts[parts.length - 1][0] : '';
+  return (first + last).toUpperCase();
+}
 
-  function avatarColor(id) {
-    return AVATAR_COLORS[(Number(id) || 0) % AVATAR_COLORS.length];
-  }
+/**
+ * Pick a consistent avatar background color based on a numeric id.
+ * @param {number} id - User or entity id
+ * @returns {string} CSS color value from AVATAR_COLORS
+ */
+function avatarColor(id) {
+  return AVATAR_COLORS[id % AVATAR_COLORS.length];
+}
 
-  function formatTimestamp(iso) {
-    if (!iso) return '\u2014';
-    const d = new Date(iso);
-    const date = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-    const time = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
-    return date + ' \u2022 ' + time;
-  }
+/**
+ * Format an ISO date string into "Feb 13, 2026 • 2:15 PM" style.
+ * @param {string} iso - ISO 8601 date string
+ * @returns {string} Formatted timestamp or em dash if input is falsy
+ */
+function formatTimestamp(iso) {
+  if (!iso) return '\u2014';
+  var d = new Date(iso);
+  var date = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  var time = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  return date + ' \u2022 ' + time;
+}
 
-  function escapeHtml(str) {
-    if (str == null) return '';
-    return String(str)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#39;');
-  }
+/**
+ * Escape HTML special characters to prevent XSS when inserting message bodies.
+ * @param {string} str - Raw string to escape
+ * @returns {string} HTML-safe string
+ */
+function escapeHtml(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
 
-  function getQueryParam(name) {
-    return new URLSearchParams(window.location.search).get(name);
-  }
+/**
+ * Read the ?id= or ?submission= query parameter from the current URL.
+ * @returns {string|null} The submission ID from the URL, or null
+ */
+function getQueryId() {
+  var params = new URLSearchParams(window.location.search);
+  return params.get('id') || params.get('submission');
+}
 
-  function roleLabel(role) {
-    if (!role) return '';
-    return role.charAt(0).toUpperCase() + role.slice(1);
-  }
+// ================================================================
+//  SOCKET.IO SETUP
+// ================================================================
 
-  // ---------- Socket.IO -----------------------------------------------------
+/**
+ * Lazily initialize and return the Socket.IO client connection.
+ * Passes the user's JWT token for authentication. Logs connection
+ * errors but does not throw — real-time features degrade gracefully.
+ * @returns {Object|null} The Socket.IO socket instance, or null if io is unavailable
+ */
+function getSocket() {
+  if (typeof window.io === 'undefined') return null;
 
-  function getSocket() {
-    if (typeof window.io === 'undefined') return null;
-    if (!socket) {
-      try {
-        socket = window.io({ auth: { token: getToken() } });
-        socket.on('connect_error', function (err) {
-          console.error('Socket.IO connection error:', err.message);
-        });
-      } catch (err) {
-        console.error('Socket.IO init failed:', err);
-        return null;
-      }
+  if (!socket) {
+    try {
+      socket = window.io({
+        auth: { token: getToken() }
+      });
+      socket.on('connect_error', function(err) {
+        console.error('Socket.IO connection error:', err.message);
+      });
+    } catch (err) {
+      console.error('Socket.IO init failed:', err);
+      return null;
     }
-    return socket;
+  }
+  return socket;
+}
+
+/**
+ * Join a Socket.IO room for a specific submission thread.
+ * @param {string} submissionId - The submission ID to join
+ */
+function joinThread(submissionId) {
+  var s = getSocket();
+  if (s) s.emit('join_thread', String(submissionId));
+}
+
+/**
+ * Leave a Socket.IO room for a specific submission thread.
+ * @param {string} submissionId - The submission ID to leave
+ */
+function leaveThread(submissionId) {
+  var s = getSocket();
+  if (s) s.emit('leave_thread', String(submissionId));
+}
+
+/**
+ * Bind a handler to the 'new_message' Socket.IO event. Should be
+ * called once per page load.
+ * @param {Function} handler - Callback receiving the new message object
+ */
+function bindIncomingMessages(handler) {
+  var s = getSocket();
+  if (s) s.on('new_message', handler);
+}
+
+// ================================================================
+//  DISCUSSION PANEL (submission-detail.html)
+// ================================================================
+
+/**
+ * Initialize the discussion panel on the submission detail page.
+ * Guards on .message-list container. Loads existing messages, wires
+ * the send button and Enter key, joins the Socket.IO thread, and
+ * binds real-time incoming message handling.
+ */
+function initDiscussionPanel() {
+  var messageList = document.querySelector('.message-list');
+  if (!messageList) return;
+
+  var submissionId = getQueryId();
+  if (!submissionId) return;
+
+  activeSubmissionId = submissionId;
+
+  loadDiscussion(submissionId);
+
+  var sendBtn = document.querySelector('.message-compose .btn');
+  var msgInput = document.querySelector('.message-compose input');
+
+  if (sendBtn) {
+    sendBtn.addEventListener('click', sendDiscussionMessage);
+  }
+  if (msgInput) {
+    msgInput.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') sendDiscussionMessage();
+    });
   }
 
-  function joinSubmissionThread(submissionId) {
-    const s = getSocket();
-    if (s) s.emit('join_thread', String(submissionId));
+  joinThread(submissionId);
+  bindIncomingMessages(appendDiscussionMessage);
+}
+
+/**
+ * Fetch and render all messages for a submission into the .message-list container.
+ * Each message displays the sender's avatar, name, timestamp, and body.
+ * @async
+ * @param {string} submissionId - The submission ID to load messages for
+ */
+async function loadDiscussion(submissionId) {
+  var messageList = document.querySelector('.message-list');
+  if (!messageList) return;
+
+  try {
+    var res = await apiFetch('/api/messages/' + submissionId);
+    var messages = await res.json();
+
+    messageList.innerHTML = '';
+
+    for (var i = 0; i < messages.length; i++) {
+      var msg = messages[i];
+      var name = (msg.first_name || '') + ' ' + (msg.last_name || '');
+      var initials = getInitials(name);
+
+      var div = document.createElement('div');
+      div.className = 'message-item';
+      div.innerHTML =
+        '<div class="msg-avatar" style="background:' + avatarColor(msg.sender_id) + ';">' + initials + '</div>' +
+        '<div class="msg-content">' +
+          '<div class="msg-header">' +
+            '<span class="msg-author">' + escapeHtml(name.trim()) + '</span>' +
+            '<span class="msg-time">' + formatTimestamp(msg.created_at) + '</span>' +
+          '</div>' +
+          '<div class="msg-body">' + escapeHtml(msg.body) + '</div>' +
+        '</div>';
+      messageList.appendChild(div);
+    }
+
+    messageList.scrollTop = messageList.scrollHeight;
+  } catch (err) {
+    console.error('Failed to load discussion:', err);
   }
+}
 
-  function leaveSubmissionThread(submissionId) {
-    const s = getSocket();
-    if (s) s.emit('leave_thread', String(submissionId));
-  }
+/**
+ * Append a single incoming message to the discussion panel.
+ * Only appends if the message belongs to the currently active submission.
+ * Auto-scrolls to the bottom after appending.
+ * @param {Object} msg - The message object received via Socket.IO
+ */
+function appendDiscussionMessage(msg) {
+  if (String(msg.submission_id) !== String(activeSubmissionId)) return;
 
-  function joinDm(peerId) {
-    const s = getSocket();
-    if (s) s.emit('join_dm', Number(peerId));
-  }
+  var messageList = document.querySelector('.message-list');
+  if (!messageList) return;
 
-  function joinDmPair(a, b) {
-    const s = getSocket();
-    if (s) s.emit('join_dm_pair', Number(a), Number(b));
-  }
+  var name = (msg.first_name || '') + ' ' + (msg.last_name || '');
+  var initials = getInitials(name);
 
-  function bindIncomingMessages(handler) {
-    const s = getSocket();
-    if (s) s.on('new_message', handler);
-  }
+  var div = document.createElement('div');
+  div.className = 'message-item';
+  div.innerHTML =
+    '<div class="msg-avatar" style="background:' + avatarColor(msg.sender_id) + ';">' + initials + '</div>' +
+    '<div class="msg-content">' +
+      '<div class="msg-header">' +
+        '<span class="msg-author">' + escapeHtml(name.trim()) + '</span>' +
+        '<span class="msg-time">' + formatTimestamp(msg.created_at) + '</span>' +
+      '</div>' +
+      '<div class="msg-body">' + escapeHtml(msg.body) + '</div>' +
+    '</div>';
 
-  // ---------- Submission-detail page Discussion Panel -----------------------
-  //
-  // The submission-detail page only shows a *preview* of the discussion. The
-  // whole card behaves like a link to messages.html?id=<submissionId>, where
-  // the actual chat lives. Composing happens there, never in this preview.
+  messageList.appendChild(div);
+  messageList.scrollTop = messageList.scrollHeight;
+}
 
-  function initDiscussionPanel() {
-    const messageList = document.querySelector('.message-list');
-    if (!messageList) return;
+/**
+ * Send a message from the discussion panel on the submission detail page.
+ * Reads input value, validates it's not empty, POSTs to the API, and
+ * clears the input on success. The message arrives back via Socket.IO
+ * so there is no need to manually append it.
+ * @async
+ */
+async function sendDiscussionMessage() {
+  var msgInput = document.querySelector('.message-compose input');
+  if (!msgInput) return;
 
-    const submissionId = getQueryParam('id') || getQueryParam('submission');
-    if (!submissionId) return;
+  var text = msgInput.value.trim();
+  if (!text) return;
 
-    // The submission discussion is a staff-only thread (admin / editor /
-    // assigned reviewer). The submitting author must not see it on their
-    // own submission detail page.
-    const me = (typeof getUser === 'function') ? getUser() : null;
-    const card = document.getElementById('discussion-card');
-    if (!me || me.role === 'submitter') {
-      if (card) card.style.display = 'none';
+  try {
+    var res = await apiFetch('/api/messages/' + activeSubmissionId, {
+      method: 'POST',
+      body: JSON.stringify({ body: text })
+    });
+
+    if (!res.ok) {
+      var data = await res.json();
+      alert(data.error || 'Failed to send message');
       return;
     }
 
-    activeSubmissionId = submissionId;
+    msgInput.value = '';
+  } catch (err) {
+    console.error('Send message error:', err);
+    alert('Failed to send message');
+  }
+}
 
-    loadDiscussion(submissionId);
+// ================================================================
+//  THREADS PAGE (messages.html)
+// ================================================================
 
-    if (card) {
-      const goToMessages = function () {
-        window.location.href = 'messages.html?id=' + encodeURIComponent(submissionId);
-      };
-      card.addEventListener('click', goToMessages);
-      card.addEventListener('keydown', function (e) {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          goToMessages();
-        }
-      });
-    }
+/**
+ * Initialize the full messages/threads page.
+ * Guards on #threads-list container. Loads threads, auto-selects from
+ * ?submission= URL param or defaults to first thread, wires search
+ * input and send button, and binds Socket.IO for real-time updates.
+ */
+function initThreadsPage() {
+  if (!document.getElementById('threads-list')) return;
 
-    joinSubmissionThread(submissionId);
-    bindIncomingMessages(appendDiscussionMessage);
+  var sendBtn = document.querySelector('.msg-conv-footer .btn');
+  if (sendBtn) {
+    sendBtn.addEventListener('click', sendThreadMessage);
+  }
+  var msgInput = document.querySelector('.msg-conv-footer input');
+  if (msgInput) {
+    msgInput.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') sendThreadMessage();
+    });
   }
 
-  async function loadDiscussion(submissionId) {
-    const messageList = document.querySelector('.message-list');
-    if (!messageList) return;
-    const countEl = document.getElementById('discussion-count');
-    try {
-      const res = await apiFetch('/api/messages/' + encodeURIComponent(submissionId));
-      const messages = await res.json();
-      messageList.innerHTML = '';
-      if (!Array.isArray(messages) || !messages.length) {
-        messageList.innerHTML =
-          '<p class="text-muted" style="padding:.5rem 0;font-size:.85rem;">' +
-          'No messages yet \u2014 be the first to start the conversation.</p>';
-        if (countEl) countEl.textContent = '';
-        return;
-      }
-      // Show only the last few messages as a preview; the full thread lives
-      // on messages.html.
-      const tail = messages.slice(-3);
-      for (const msg of tail) appendDiscussionRow(messageList, msg);
-      messageList.scrollTop = messageList.scrollHeight;
-      if (countEl) {
-        countEl.textContent = messages.length === 1
-          ? '1 message'
-          : messages.length + ' messages';
-      }
-    } catch (err) {
-      console.error('Failed to load discussion:', err);
-      messageList.innerHTML =
-        '<p class="text-muted" style="padding:.75rem;">Could not load messages.</p>';
-    }
+  var searchInput = document.querySelector('.msg-threads-header input');
+  if (searchInput) {
+    searchInput.addEventListener('input', filterThreads);
   }
 
-  function appendDiscussionRow(container, msg) {
-    const name = ((msg.first_name || '') + ' ' + (msg.last_name || '')).trim();
-    const initials = getInitials(name || '??');
-    const div = document.createElement('div');
-    div.className = 'message-item';
+  loadThreads().then(function() {
+    var paramId = getQueryId();
+    if (paramId) {
+      selectThread(paramId);
+    } else if (threads.length > 0) {
+      selectThread(threads[0].submission_id);
+    }
+  });
+
+  bindIncomingMessages(handleIncomingThreadMessage);
+}
+
+/**
+ * Fetch the user's message threads from GET /api/messages/threads.
+ * Caches result in the threads module-level array and renders the thread list.
+ * @async
+ */
+async function loadThreads() {
+  try {
+    var res = await apiFetch('/api/messages/threads');
+    threads = await res.json();
+    renderThreadList(threads);
+  } catch (err) {
+    console.error('Failed to load threads:', err);
+    threads = [];
+  }
+}
+
+/**
+ * Render the thread list into the #threads-list container.
+ * Each thread shows the sender's avatar, submission title, last message
+ * preview, timestamp, and optional unread dot.
+ * @param {Array<Object>} list - Array of thread objects to display
+ */
+function renderThreadList(list) {
+  var container = document.getElementById('threads-list');
+  if (!container) return;
+  container.innerHTML = '';
+
+  if (list.length === 0) {
+    container.innerHTML = '<p class="text-muted" style="padding:1rem;text-align:center;">No conversations yet.</p>';
+    return;
+  }
+
+  for (var i = 0; i < list.length; i++) {
+    var thread = list[i];
+    var name = (thread.first_name || '') + ' ' + (thread.last_name || '');
+    var initials = getInitials(name);
+    var subId = thread.submission_id;
+    var displayId = thread.submission_id_display || '#' + subId;
+    var title = displayId + ' \u2014 ' + (thread.title || 'Untitled');
+    var preview = name.trim() + ': ' + (thread.body || '');
+    var time = formatTimestamp(thread.created_at);
+
+    var div = document.createElement('div');
+    div.className = 'thread-item';
+    div.dataset.submissionId = subId;
+
+    if (String(subId) === String(activeSubmissionId)) {
+      div.classList.add('active');
+    }
+
     div.innerHTML =
-      '<div class="msg-avatar" style="background:' + avatarColor(msg.sender_id) + ';">' + escapeHtml(initials) + '</div>' +
-      '<div class="msg-content">' +
-        '<div class="msg-header">' +
-          '<span class="msg-author">' + escapeHtml(name || 'Unknown') + '</span>' +
-          '<span class="msg-time">' + formatTimestamp(msg.created_at) + '</span>' +
+      '<div class="thread-avatar" style="background:' + avatarColor(thread.sender_id || i) + ';">' + initials + '</div>' +
+      '<div class="thread-info">' +
+        '<div class="thread-title">' + escapeHtml(title) + '</div>' +
+        '<div class="thread-preview">' + escapeHtml(preview) + '</div>' +
+        '<div class="thread-meta">' +
+          '<span class="thread-time">' + time + '</span>' +
         '</div>' +
-        '<div class="msg-body">' + escapeHtml(msg.body) + '</div>' +
       '</div>';
+
+    div.addEventListener('click', (function(id) {
+      return function() { selectThread(id); };
+    })(subId));
+
     container.appendChild(div);
   }
+}
 
-  function appendDiscussionMessage(msg) {
-    // Only handle submission-thread broadcasts here.
-    if (msg.kind && msg.kind !== 'submission') return;
-    if (String(msg.submission_id) !== String(activeSubmissionId)) return;
-    const messageList = document.querySelector('.message-list');
-    if (!messageList) return;
-    appendDiscussionRow(messageList, msg);
-    messageList.scrollTop = messageList.scrollHeight;
+/**
+ * Select and display a thread's conversation.
+ * Leaves the previous Socket.IO room, joins the new one, toggles
+ * the active class on thread items, clears unread dots, updates the
+ * conversation header and View Submission link, and loads the messages.
+ * @param {string} submissionId - The submission ID of the thread to select
+ */
+function selectThread(submissionId) {
+  if (activeSubmissionId && String(activeSubmissionId) !== String(submissionId)) {
+    leaveThread(activeSubmissionId);
   }
 
-  // ---------- Threads page (messages.html) ----------------------------------
+  activeSubmissionId = submissionId;
 
-  function initThreadsPage() {
-    const threadsListEl = document.getElementById('threads-list');
-    if (!threadsListEl) return;
-
-    const sendBtn = document.querySelector('.msg-conv-footer .btn');
-    if (sendBtn) sendBtn.addEventListener('click', sendActiveThreadMessage);
-
-    const msgInput = document.querySelector('.msg-conv-footer input');
-    if (msgInput) {
-      msgInput.addEventListener('keydown', function (e) {
-        if (e.key === 'Enter') sendActiveThreadMessage();
-      });
-    }
-
-    const searchInput = document.querySelector('.msg-threads-header input');
-    if (searchInput) searchInput.addEventListener('input', filterThreads);
-
-    const newDmBtn = document.getElementById('new-dm-btn');
-    if (newDmBtn) newDmBtn.addEventListener('click', openNewDmPicker);
-
-    // Modal close ([data-action="close-modal"]) is wired generically in app.js.
-
-    bindIncomingMessages(handleIncomingMessage);
-
-    loadThreads().then(function () {
-      // Optional auto-select via ?thread=staff or ?dm=<peerId> or ?id=KCR-XXXX
-      const dmParam = getQueryParam('dm');
-      const threadParam = getQueryParam('thread');
-      const idParam = getQueryParam('id');
-
-      if (dmParam) {
-        selectThread({ kind: 'dm', key: 'dm:' + dmParam, peerId: Number(dmParam) });
-      } else if (threadParam === 'staff') {
-        selectThread({ kind: 'staff', key: 'staff' });
-      } else if (idParam) {
-        selectThread({ kind: 'submission', key: idParam });
-      } else if (threads.length > 0) {
-        const t = threads[0];
-        selectThread({ kind: t.kind, key: t.key });
-      } else {
-        showEmptyConversation('Select a conversation to start messaging.');
-      }
-    });
-  }
-
-  async function loadThreads() {
-    try {
-      const res = await apiFetch('/api/messages/threads');
-      threads = await res.json();
-      renderThreadList(threads);
-    } catch (err) {
-      console.error('Failed to load threads:', err);
-      threads = [];
-      const container = document.getElementById('threads-list');
-      if (container) {
-        container.innerHTML =
-          '<p class="text-muted" style="padding:1rem;text-align:center;">Could not load conversations.</p>';
-      }
-    }
-  }
-
-  function threadIcon(t) {
-    if (t.kind === 'staff') return '\uD83D\uDCAC'; // 💬
-    if (t.kind === 'dm') return '\uD83D\uDC64';     // 👤
-    return '\uD83D\uDCDD';                          // 📝 (submission)
-  }
-
-  function renderThreadList(list) {
-    const container = document.getElementById('threads-list');
-    if (!container) return;
-    container.innerHTML = '';
-
-    if (!list.length) {
-      container.innerHTML =
-        '<p class="text-muted" style="padding:1rem;text-align:center;">No conversations yet.</p>';
-      return;
-    }
-
-    for (let i = 0; i < list.length; i++) {
-      const t = list[i];
-      const sender = t.sender || {};
-      const senderName = ((sender.first_name || '') + ' ' + (sender.last_name || '')).trim();
-      const initials = getInitials(t.kind === 'submission' ? '#' + t.key : (senderName || t.title || '??'));
-      const preview = t.kind === 'staff' && !t.created_at
-        ? t.body
-        : (senderName ? senderName + ': ' : '') + (t.body || '');
-      const time = t.created_at ? formatTimestamp(t.created_at) : '';
-      const isActive = activeThread && activeThread.kind === t.kind && activeThread.key === t.key;
-
-      const div = document.createElement('div');
-      div.className = 'thread-item' + (isActive ? ' active' : '') + (t.pinned ? ' pinned' : '');
-      div.dataset.threadKind = t.kind;
-      div.dataset.threadKey = t.key;
-
-      const avatarStyle = t.kind === 'staff'
-        ? 'background:var(--primary);'
-        : 'background:' + avatarColor(sender.id || i) + ';';
-
-      div.innerHTML =
-        '<div class="thread-avatar" style="' + avatarStyle + '">' + escapeHtml(initials) + '</div>' +
-        '<div class="thread-info">' +
-          '<div class="thread-title">' +
-            '<span class="thread-icon" aria-hidden="true">' + threadIcon(t) + '</span> ' +
-            escapeHtml(t.title || '(untitled)') +
-          '</div>' +
-          '<div class="thread-preview">' + escapeHtml(preview || t.subtitle || '') + '</div>' +
-          '<div class="thread-meta">' +
-            '<span class="thread-time">' + escapeHtml(time) + '</span>' +
-          '</div>' +
-        '</div>';
-
-      div.addEventListener('click', (function (kind, key) {
-        return function () {
-          const ref = { kind, key };
-          if (kind === 'dm') {
-            // Personal DM threads encode the peer as the second segment.
-            const parts = String(key).split(':');
-            if (parts.length === 2) ref.peerId = Number(parts[1]);
-          }
-          selectThread(ref);
-        };
-      })(t.kind, t.key));
-
-      container.appendChild(div);
-    }
-  }
-
-  function showEmptyConversation(message) {
-    const convBody = document.getElementById('conv-body');
-    const convTitle = document.getElementById('conv-title');
-    const convSubtitle = document.getElementById('conv-subtitle');
-    const convLink = document.getElementById('conv-view-link');
-    const composer = document.querySelector('.msg-conv-footer');
-
-    if (convBody) {
-      convBody.innerHTML =
-        '<p class="text-muted" style="text-align:center;padding:2rem;">' + escapeHtml(message) + '</p>';
-    }
-    if (convTitle) convTitle.textContent = 'No conversation selected';
-    if (convSubtitle) convSubtitle.textContent = '';
-    if (convLink) {
-      convLink.style.display = 'none';
-      convLink.removeAttribute('href');
-    }
-    if (composer) composer.style.display = 'none';
-  }
-
-  function showConversationHeader(title, subtitle, viewHref) {
-    const convTitle = document.getElementById('conv-title');
-    const convSubtitle = document.getElementById('conv-subtitle');
-    const convLink = document.getElementById('conv-view-link');
-    const composer = document.querySelector('.msg-conv-footer');
-
-    if (convTitle) convTitle.textContent = title;
-    if (convSubtitle) convSubtitle.textContent = subtitle || '';
-    if (convLink) {
-      if (viewHref) {
-        convLink.style.display = '';
-        convLink.setAttribute('href', viewHref);
-      } else {
-        convLink.style.display = 'none';
-        convLink.removeAttribute('href');
-      }
-    }
-    if (composer) composer.style.display = '';
-  }
-
-  function selectThread(ref) {
-    if (!ref || !ref.kind) return;
-
-    // Highlight in the list
-    document.querySelectorAll('.thread-item').forEach(function (item) {
-      const match = item.dataset.threadKind === ref.kind && item.dataset.threadKey === ref.key;
-      item.classList.toggle('active', match);
-      if (match) {
-        const dot = item.querySelector('.unread-dot');
-        if (dot) dot.remove();
-      }
-    });
-
-    activeThread = ref;
-
-    if (ref.kind === 'submission') {
-      const found = threads.find(function (t) { return t.kind === 'submission' && t.key === ref.key; });
-      const title = found ? found.title : '#' + ref.key;
-      showConversationHeader(title, 'Submission discussion', 'submission-detail.html?id=' + encodeURIComponent(ref.key));
-      joinSubmissionThread(ref.key);
-      loadConversationMessages('submission', ref);
-    } else if (ref.kind === 'staff') {
-      showConversationHeader('Staff Lounge', 'Editors, reviewers & admins', null);
-      // Staff Lounge auto-joined server-side on connect — no explicit join.
-      loadConversationMessages('staff', ref);
-    } else if (ref.kind === 'dm') {
-      // DM key shapes: "dm:<peerId>" (own conversation) or "dm:<a>:<b>" (admin moderation).
-      const parts = String(ref.key).split(':');
-      if (parts.length === 3) {
-        const a = Number(parts[1]);
-        const b = Number(parts[2]);
-        const found = threads.find(function (t) { return t.kind === 'dm' && t.key === ref.key; });
-        showConversationHeader(found ? found.title : 'Direct message', 'Direct message (admin view)', null);
-        joinDmPair(a, b);
-        loadConversationMessages('dm-pair', { a: a, b: b });
-      } else {
-        const peerId = ref.peerId || Number(parts[1]);
-        if (!peerId) return;
-        const found = threads.find(function (t) { return t.kind === 'dm' && t.key === ref.key; });
-        showConversationHeader(found ? found.title : 'Direct message', 'Direct message', null);
-        joinDm(peerId);
-        loadConversationMessages('dm', { peerId: peerId });
-      }
-    }
-  }
-
-  async function loadConversationMessages(mode, ctx) {
-    const convBody = document.getElementById('conv-body');
-    if (!convBody) return;
-
-    convBody.innerHTML = '<p class="text-muted" style="text-align:center;padding:1rem;">Loading messages…</p>';
-
-    try {
-      let url;
-      if (mode === 'submission') url = '/api/messages/' + encodeURIComponent(ctx.key);
-      else if (mode === 'staff') url = '/api/messages/staff';
-      else if (mode === 'dm') url = '/api/messages/dm/' + ctx.peerId;
-      else if (mode === 'dm-pair') url = '/api/messages/dm-pair/' + ctx.a + '/' + ctx.b;
-      else return;
-
-      const res = await apiFetch(url);
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        convBody.innerHTML =
-          '<p class="text-muted" style="text-align:center;padding:1rem;">' +
-          escapeHtml(data.error || 'Could not load messages.') + '</p>';
-        return;
-      }
-
-      const messages = await res.json();
-      convBody.innerHTML = '';
-      for (const m of messages) appendChatBubble(m);
-      convBody.scrollTop = convBody.scrollHeight;
-    } catch (err) {
-      console.error('Failed to load conversation:', err);
-      convBody.innerHTML =
-        '<p class="text-muted" style="text-align:center;padding:1rem;">Could not load messages.</p>';
-    }
-  }
-
-  function appendChatBubble(msg) {
-    const convBody = document.getElementById('conv-body');
-    if (!convBody) return;
-
-    const me = (typeof getUser === 'function') ? getUser() : null;
-    const isOwn = me && msg.sender_id === me.id;
-    const name = ((msg.first_name || '') + ' ' + (msg.last_name || '')).trim() || 'Unknown';
-    const initials = getInitials(name);
-    const role = msg.role ? roleLabel(msg.role) : '';
-
-    const div = document.createElement('div');
-    div.className = 'chat-msg' + (isOwn ? ' own' : '');
-    div.innerHTML =
-      '<div class="chat-avatar" style="background:' + avatarColor(msg.sender_id) + ';">' + escapeHtml(initials) + '</div>' +
-      '<div>' +
-        '<div class="chat-author">' +
-          escapeHtml(name) +
-          (role ? ' <span class="chat-role">' + escapeHtml(role) + '</span>' : '') +
-        '</div>' +
-        '<div class="chat-bubble">' + escapeHtml(msg.body) + '</div>' +
-        '<div class="chat-time">' + formatTimestamp(msg.created_at) + '</div>' +
-      '</div>';
-
-    convBody.appendChild(div);
-    convBody.scrollTop = convBody.scrollHeight;
-  }
-
-  async function sendActiveThreadMessage() {
-    const msgInput = document.querySelector('.msg-conv-footer input');
-    if (!msgInput || !activeThread) return;
-    const text = msgInput.value.trim();
-    if (!text) return;
-
-    let url;
-    if (activeThread.kind === 'submission') {
-      url = '/api/messages/' + encodeURIComponent(activeThread.key);
-    } else if (activeThread.kind === 'staff') {
-      url = '/api/messages/staff';
-    } else if (activeThread.kind === 'dm') {
-      // Sending into an admin-moderation DM (3-segment key) is not supported —
-      // admins can only watch other people's conversations.
-      const parts = String(activeThread.key).split(':');
-      if (parts.length === 3) {
-        alert('Read-only view: admins can\'t send messages on someone else\'s behalf.');
-        return;
-      }
-      const peerId = activeThread.peerId || Number(parts[1]);
-      if (!peerId) return;
-      url = '/api/messages/dm/' + peerId;
+  // Toggle .active on the selected thread item
+  document.querySelectorAll('.thread-item').forEach(function(item) {
+    if (String(item.dataset.submissionId) === String(submissionId)) {
+      item.classList.add('active');
+      var dot = item.querySelector('.unread-dot');
+      if (dot) dot.remove();
     } else {
-      return;
+      item.classList.remove('active');
     }
-
-    try {
-      const res = await apiFetch(url, {
-        method: 'POST',
-        body: JSON.stringify({ body: text }),
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        alert(data.error || 'Failed to send message');
-        return;
-      }
-      msgInput.value = '';
-    } catch (err) {
-      console.error('Send message error:', err);
-      alert('Failed to send message');
-    }
-  }
-
-  // Reconcile a real-time `new_message` event against the threads list & open
-  // conversation. Each kind has its own matching rule.
-  function handleIncomingMessage(msg) {
-    if (!msg) return;
-
-    let threadKey = null;
-    let threadKind = msg.kind || null;
-
-    if (msg.kind === 'staff') {
-      threadKey = 'staff';
-    } else if (msg.kind === 'dm') {
-      // For admins watching arbitrary DMs, the relevant key is the pair.
-      const me = (typeof getUser === 'function') ? getUser() : null;
-      if (me && me.role === 'admin' && msg.sender_id !== me.id && msg.peer_id !== me.id) {
-        const lo = Math.min(Number(msg.sender_id), Number(msg.peer_id));
-        const hi = Math.max(Number(msg.sender_id), Number(msg.peer_id));
-        threadKey = 'dm:' + lo + ':' + hi;
-      } else {
-        // For one of the two participants, the DM thread key is keyed by the OTHER user.
-        const meId = me ? me.id : null;
-        const peerId = msg.sender_id === meId ? msg.peer_id : msg.sender_id;
-        threadKey = 'dm:' + peerId;
-      }
-    } else {
-      // Submission discussion (current contract: msg.submission_id is the text code).
-      threadKey = msg.submission_id;
-      threadKind = 'submission';
-    }
-
-    const isActive = activeThread && activeThread.kind === threadKind && activeThread.key === threadKey;
-    if (isActive) {
-      appendChatBubble(msg);
-    }
-
-    bumpThread(threadKind, threadKey, msg, !isActive);
-  }
-
-  function bumpThread(kind, key, msg, markUnread) {
-    if (!kind || !key) return;
-    let found = threads.find(function (t) { return t.kind === kind && t.key === key; });
-
-    if (!found) {
-      // Not in our cache — refetch the list (cheap & keeps everything sorted).
-      loadThreads();
-      return;
-    }
-
-    const senderName = ((msg.first_name || '') + ' ' + (msg.last_name || '')).trim();
-    found.body = msg.body;
-    found.created_at = msg.created_at;
-    found.sender = {
-      id: msg.sender_id,
-      first_name: msg.first_name,
-      last_name: msg.last_name,
-      role: msg.role,
-    };
-
-    // Move to the top, keeping any pinned threads first.
-    threads = threads.filter(function (t) { return t !== found; });
-    const firstNonPinned = threads.findIndex(function (t) { return !t.pinned; });
-    if (found.pinned || firstNonPinned === -1) {
-      threads.unshift(found);
-    } else {
-      threads.splice(firstNonPinned, 0, found);
-    }
-    renderThreadList(threads);
-
-    if (markUnread) {
-      const item = document.querySelector(
-        '.thread-item[data-thread-kind="' + kind + '"][data-thread-key="' + CSS.escape(String(key)) + '"]'
-      );
-      if (item) {
-        const meta = item.querySelector('.thread-meta');
-        if (meta && !meta.querySelector('.unread-dot')) {
-          const dot = document.createElement('span');
-          dot.className = 'unread-dot';
-          meta.appendChild(dot);
-        }
-        // (suppress unused warning)
-        void senderName;
-      }
-    }
-  }
-
-  function filterThreads() {
-    const searchInput = document.querySelector('.msg-threads-header input');
-    if (!searchInput) return;
-    const query = searchInput.value.trim().toLowerCase();
-    if (!query) {
-      renderThreadList(threads);
-      return;
-    }
-    const filtered = threads.filter(function (t) {
-      const sender = t.sender || {};
-      const senderName = ((sender.first_name || '') + ' ' + (sender.last_name || '')).toLowerCase();
-      const title = (t.title || '').toLowerCase();
-      const preview = (t.body || '').toLowerCase();
-      return title.indexOf(query) !== -1 || preview.indexOf(query) !== -1 || senderName.indexOf(query) !== -1;
-    });
-    renderThreadList(filtered);
-  }
-
-  // ---------- "New DM" picker ----------------------------------------------
-
-  async function openNewDmPicker() {
-    const modal = document.getElementById('new-dm-modal');
-    const list = document.getElementById('new-dm-list');
-    if (!modal || !list) return;
-
-    list.innerHTML = '<p class="text-muted" style="padding:1rem;">Loading staff members…</p>';
-    modal.classList.add('show');
-
-    try {
-      const res = await apiFetch('/api/messages/staff-users');
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        list.innerHTML =
-          '<p class="text-muted" style="padding:1rem;">' +
-          escapeHtml(data.error || 'Could not load staff list.') +
-          '</p>';
-        return;
-      }
-      const users = await res.json();
-      if (!users.length) {
-        list.innerHTML = '<p class="text-muted" style="padding:1rem;">No other staff members yet.</p>';
-        return;
-      }
-      list.innerHTML = users.map(function (u) {
-        const name = (u.first_name || '') + ' ' + (u.last_name || '');
-        const initials = getInitials(name);
-        return (
-          '<div class="dm-pick-row" data-peer-id="' + u.id + '">' +
-            '<div class="thread-avatar" style="background:' + avatarColor(u.id) + ';">' +
-              escapeHtml(initials) +
-            '</div>' +
-            '<div class="dm-pick-info">' +
-              '<div class="dm-pick-name">' + escapeHtml(name.trim()) + '</div>' +
-              '<div class="dm-pick-role">' + escapeHtml(roleLabel(u.role)) + '</div>' +
-            '</div>' +
-          '</div>'
-        );
-      }).join('');
-
-      list.querySelectorAll('.dm-pick-row').forEach(function (row) {
-        row.addEventListener('click', function () {
-          const peerId = Number(row.dataset.peerId);
-          if (!peerId) return;
-          modal.classList.remove('show');
-          // Make sure the (possibly brand-new) DM thread shows in the sidebar.
-          const existing = threads.find(function (t) {
-            return t.kind === 'dm' && t.key === 'dm:' + peerId;
-          });
-          if (!existing) {
-            const u = users.find(function (x) { return x.id === peerId; });
-            const name = u ? ((u.first_name || '') + ' ' + (u.last_name || '')).trim() : 'Direct message';
-            threads.unshift({
-              kind: 'dm',
-              key: 'dm:' + peerId,
-              title: name,
-              subtitle: u ? roleLabel(u.role) : 'Direct message',
-              body: '',
-              created_at: null,
-              sender: null,
-            });
-            renderThreadList(threads);
-          }
-          selectThread({ kind: 'dm', key: 'dm:' + peerId, peerId: peerId });
-        });
-      });
-    } catch (err) {
-      console.error('Failed to load staff users:', err);
-      list.innerHTML =
-        '<p class="text-muted" style="padding:1rem;">Could not load staff list.</p>';
-    }
-  }
-
-  // ---------- Init ----------------------------------------------------------
-
-  document.addEventListener('DOMContentLoaded', function () {
-    initThreadsPage();
-    initDiscussionPanel();
   });
-})();
+
+  // Update conversation header title
+  var convHeader = document.querySelector('.msg-conv-header strong');
+  if (convHeader) {
+    var activeItem = document.querySelector('.thread-item.active .thread-title');
+    if (activeItem) {
+      convHeader.textContent = activeItem.textContent;
+    }
+  }
+
+  // Set View Submission link
+  var viewLink = document.querySelector('.msg-conv-header .btn');
+  if (viewLink) {
+    viewLink.setAttribute('href', 'submission-detail.html?id=' + submissionId);
+  }
+
+  loadConversation(submissionId);
+  joinThread(submissionId);
+}
+
+/**
+ * Fetch and render all messages for a submission into the #conv-body container.
+ * Messages from the current user are marked with the .own class for
+ * right-aligned styling. Auto-scrolls to bottom after rendering.
+ * @async
+ * @param {string} submissionId - The submission ID to load messages for
+ */
+async function loadConversation(submissionId) {
+  var convBody = document.getElementById('conv-body');
+  if (!convBody) return;
+
+  try {
+    var res = await apiFetch('/api/messages/' + submissionId);
+    var messages = await res.json();
+
+    convBody.innerHTML = '';
+
+    for (var i = 0; i < messages.length; i++) {
+      appendChatBubble(messages[i]);
+    }
+
+    convBody.scrollTop = convBody.scrollHeight;
+  } catch (err) {
+    console.error('Failed to load conversation:', err);
+  }
+}
+
+/**
+ * Append a single chat bubble to the #conv-body container.
+ * Used by both loadConversation (initial render) and Socket.IO
+ * incoming message events. Marks the current user's messages with
+ * .own class for right-alignment and primary color styling.
+ * @param {Object} msg - The message object to render
+ */
+function appendChatBubble(msg) {
+  var convBody = document.getElementById('conv-body');
+  if (!convBody) return;
+
+  var user = getUser();
+  var isOwn = msg.sender_id === user.id;
+  var name = (msg.first_name || '') + ' ' + (msg.last_name || '');
+  var initials = getInitials(name);
+
+  var div = document.createElement('div');
+  div.className = 'chat-msg' + (isOwn ? ' own' : '');
+  div.innerHTML =
+    '<div class="chat-avatar" style="background:' + avatarColor(msg.sender_id) + ';">' + initials + '</div>' +
+    '<div>' +
+      '<div class="chat-bubble">' + escapeHtml(msg.body) + '</div>' +
+      '<div class="chat-time">' + formatTimestamp(msg.created_at) + '</div>' +
+    '</div>';
+
+  convBody.appendChild(div);
+  convBody.scrollTop = convBody.scrollHeight;
+}
+
+/**
+ * Send a message from the messages page conversation view.
+ * Reads the footer input value, validates it's not empty, POSTs to
+ * the API, and clears the input. The message arrives via Socket.IO.
+ * @async
+ */
+async function sendThreadMessage() {
+  var msgInput = document.querySelector('.msg-conv-footer input');
+  if (!msgInput || !activeSubmissionId) return;
+
+  var text = msgInput.value.trim();
+  if (!text) return;
+
+  try {
+    var res = await apiFetch('/api/messages/' + activeSubmissionId, {
+      method: 'POST',
+      body: JSON.stringify({ body: text })
+    });
+
+    if (!res.ok) {
+      var data = await res.json();
+      alert(data.error || 'Failed to send message');
+      return;
+    }
+
+    msgInput.value = '';
+  } catch (err) {
+    console.error('Send message error:', err);
+    alert('Failed to send message');
+  }
+}
+
+/**
+ * Handle a real-time incoming message on the threads page.
+ * If the message belongs to the currently viewed thread, appends the
+ * chat bubble. Otherwise, adds an unread notification dot to the
+ * thread item, updates its preview text and timestamp, and bumps
+ * it to the top of the thread list.
+ * @param {Object} msg - The message object received via Socket.IO
+ */
+function handleIncomingThreadMessage(msg) {
+  if (String(msg.submission_id) === String(activeSubmissionId)) {
+    appendChatBubble(msg);
+  } else {
+    var threadItem = document.querySelector('.thread-item[data-submission-id="' + msg.submission_id + '"]');
+    if (threadItem) {
+      // Add unread dot
+      var meta = threadItem.querySelector('.thread-meta');
+      if (meta && !meta.querySelector('.unread-dot')) {
+        var dot = document.createElement('span');
+        dot.className = 'unread-dot';
+        meta.appendChild(dot);
+      }
+
+      // Update preview text
+      var preview = threadItem.querySelector('.thread-preview');
+      if (preview) {
+        var senderName = (msg.first_name || '') + ' ' + (msg.last_name || '');
+        preview.textContent = senderName.trim() + ': ' + (msg.body || '');
+      }
+
+      // Update timestamp
+      var timeEl = threadItem.querySelector('.thread-time');
+      if (timeEl) {
+        timeEl.textContent = formatTimestamp(msg.created_at);
+      }
+
+      // Bump to top of list
+      var container = document.getElementById('threads-list');
+      if (container && container.firstChild !== threadItem) {
+        container.insertBefore(threadItem, container.firstChild);
+      }
+    }
+  }
+}
+
+/**
+ * Filter the thread list client-side based on the search input value.
+ * Matches against thread title, message body preview, and sender name.
+ * Re-renders the thread list with matching results.
+ */
+function filterThreads() {
+  var searchInput = document.querySelector('.msg-threads-header input');
+  if (!searchInput) return;
+
+  var query = searchInput.value.toLowerCase();
+
+  if (!query) {
+    renderThreadList(threads);
+    return;
+  }
+
+  var filtered = threads.filter(function(thread) {
+    var title = (thread.title || '').toLowerCase();
+    var preview = (thread.body || '').toLowerCase();
+    var name = ((thread.first_name || '') + ' ' + (thread.last_name || '')).toLowerCase();
+    return title.indexOf(query) !== -1 || preview.indexOf(query) !== -1 || name.indexOf(query) !== -1;
+  });
+
+  renderThreadList(filtered);
+}
+
+// ================================================================
+//  INIT
+// ================================================================
+
+document.addEventListener('DOMContentLoaded', function() {
+  initThreadsPage();
+  initDiscussionPanel();
+});
+
+// Globals exposed for inline onclick handlers.
+window.selectThread = selectThread;
+window.sendThreadMessage = sendThreadMessage;
+window.sendDiscussionMessage = sendDiscussionMessage;
