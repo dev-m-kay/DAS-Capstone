@@ -1,13 +1,33 @@
-// State
-let myAssignments = [];   
-let currentReview = null; 
+/**
+ * @file reviews.js
+ * @description Powers the review queue page (review-queue.html) and the
+ * review rating widget on the submission detail page (submission-detail.html).
+ * Uses the shared apiFetch() and getUser() helpers from app.js.
+ * Page-specific code is guarded by container checks so it is safe to
+ * include on multiple pages.
+ */
 
-// Helpers
+// ---- State ----
+
+/** @type {Array<Object>} Cached list of assigned submissions for the review queue page */
+let myAssignments = [];
+
+/** @type {Object|null} The current user's existing review on the detail page, if any */
+let currentReview = null;
+
+// ---- Helpers ----
+
+/** @type {string[]} Color palette for avatar circles, matching admin.js */
 const AVATAR_COLORS = [
   'var(--primary)', 'var(--success)', 'var(--danger)', '#7c3aed',
   'var(--warning)', '#0ea5e9', '#ec4899', '#14b8a6',
 ];
 
+/**
+ * Extract initials from a full name (first letter of first and last word).
+ * @param {string} name - Full name string
+ * @returns {string} Two-character uppercase initials, or '??' if name is falsy
+ */
 function getInitials(name) {
   if (!name) return '??';
   var parts = name.trim().split(/\s+/);
@@ -16,20 +36,39 @@ function getInitials(name) {
   return (first + last).toUpperCase();
 }
 
+/**
+ * Pick a consistent avatar background color based on a numeric id.
+ * @param {number} id - User or entity id
+ * @returns {string} CSS color value from AVATAR_COLORS
+ */
 function avatarColor(id) {
   return AVATAR_COLORS[id % AVATAR_COLORS.length];
 }
 
+/**
+ * Format an ISO date string into a short readable format (e.g. "Feb 13, 2026").
+ * @param {string} iso - ISO 8601 date string
+ * @returns {string} Formatted date or em dash if input is falsy
+ */
 function formatDate(iso) {
   if (!iso) return '\u2014';
   return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
+/**
+ * Read the ?id= query parameter from the current URL.
+ * @returns {string|null} The submission ID from the URL, or null
+ */
 function getQueryId() {
   var params = new URLSearchParams(window.location.search);
   return params.get('id');
 }
 
+/**
+ * Escape HTML special characters to prevent XSS when inserting user content.
+ * @param {string} str - Raw string to escape
+ * @returns {string} HTML-safe string
+ */
 function escapeHtml(str) {
   if (str === null || str === undefined) return '';
   return String(str)
@@ -40,6 +79,11 @@ function escapeHtml(str) {
     .replace(/'/g, '&#39;');
 }
 
+/**
+ * Generate a status badge HTML string for a given submission status.
+ * @param {string} status - One of: 'pending', 'in_review', 'accepted', 'rejected'
+ * @returns {string} HTML span element with appropriate badge class and label
+ */
 function statusBadge(status) {
   var map = { pending: 'badge-pending', in_review: 'badge-review', accepted: 'badge-accepted', rejected: 'badge-rejected' };
   var label = { pending: 'Pending', in_review: 'In Review', accepted: 'Accepted', rejected: 'Rejected' };
@@ -47,7 +91,15 @@ function statusBadge(status) {
 }
 
 
-// Review Queue page 
+// ================================================================
+//  REVIEW QUEUE PAGE (review-queue.html)
+// ================================================================
+
+/**
+ * Initialize the review queue page. Guards on #review-cards container.
+ * Loads assignments from the API, renders stats and cards, and wires
+ * search, genre filter, and tab button event listeners.
+ */
 function initReviewQueue() {
   if (!document.getElementById('review-cards')) return;
 
@@ -75,6 +127,11 @@ function initReviewQueue() {
   });
 }
 
+/**
+ * Fetch the reviewer's assigned submissions from GET /api/reviews/queue.
+ * Stores result in the myAssignments module-level array.
+ * @async
+ */
 async function loadAssignments() {
   try {
     var res = await apiFetch('/api/reviews/queue');
@@ -85,6 +142,11 @@ async function loadAssignments() {
   }
 }
 
+/**
+ * Update the stat cards and tab labels with counts derived from the
+ * assignments list (assigned, awaiting review, reviewed).
+ * @param {Array<Object>} list - Array of assignment objects
+ */
 function renderReviewStats(list) {
   var assigned = list.length;
   var reviewed = 0;
@@ -115,6 +177,12 @@ function renderReviewStats(list) {
   }
 }
 
+/**
+ * Render submission cards into the #review-cards container.
+ * Each card shows the submission ID, status badge, title, metadata,
+ * hidden author line, and action buttons (Review Now / Discuss).
+ * @param {Array<Object>} list - Filtered array of assignment objects to display
+ */
 function renderReviewCards(list) {
   var container = document.getElementById('review-cards');
   if (!container) return;
@@ -178,6 +246,11 @@ function renderReviewCards(list) {
   }
 }
 
+/**
+ * Switch the active review queue tab and re-render cards accordingly.
+ * @param {HTMLElement} el - The clicked tab button element
+ * @param {string} tab - One of: 'awaiting', 'reviewed', 'all'
+ */
 function switchReviewTab(el, tab) {
   // Toggle active class on tabs
   document.querySelectorAll('.tab').forEach(function(t) {
@@ -198,6 +271,11 @@ function switchReviewTab(el, tab) {
   renderReviewCards(filtered);
 }
 
+/**
+ * Apply search input and genre filter on top of the currently active tab.
+ * Reads the search text and genre select value, filters myAssignments,
+ * and re-renders the cards.
+ */
 function filterReviewCards() {
   var searchInput = document.querySelector('.search-input input');
   var genreSelect = document.getElementById('filter-genre');
@@ -237,9 +315,17 @@ function filterReviewCards() {
 }
 
 
-// Review Widget
+// ================================================================
+//  REVIEW WIDGET (submission-detail.html)
+// ================================================================
+
+/**
+ * Initialize the star rating widget on the submission detail page.
+ * Guards on #ratingStars. Hides the rating card if the user's role is not
+ * reviewer, editor, or admin. Loads existing review data and wires
+ * star click and submit button event listeners.
+ */
 function initReviewWidget() {
-  // guard on #ratingStars
   if (!document.getElementById('ratingStars')) return;
 
   var user = getUser();
@@ -256,8 +342,6 @@ function initReviewWidget() {
   if (!submissionId) return;
 
   // Admin / editor: show every reviewer's feedback for this submission.
-  // (Reviewers see only their own review in the rating card; submitters see
-  //  nothing here.)
   if (user && (user.role === 'admin' || user.role === 'editor')) {
     loadReviewerFeedback(submissionId);
   }
@@ -299,8 +383,12 @@ function initReviewWidget() {
   }
 }
 
-// Render the list of every reviewer's feedback (admin/editor only). Pulled
-// from GET /api/reviews/:submissionId — backend already enforces access.
+/**
+ * Load and render all reviewer feedback for a submission (admin/editor only).
+ * Displays average rating and individual reviewer entries in the #reviews-card.
+ * @async
+ * @param {string} submissionId - The submission ID to load feedback for
+ */
 async function loadReviewerFeedback(submissionId) {
   var card = document.getElementById('reviews-card');
   var listEl = document.getElementById('reviews-list');
@@ -328,7 +416,7 @@ async function loadReviewerFeedback(submissionId) {
       return;
     }
 
-    // Average rating block.
+    // Average rating block
     var sum = 0;
     for (var i = 0; i < reviews.length; i++) sum += Number(reviews[i].rating) || 0;
     var avg = sum / reviews.length;
@@ -370,19 +458,31 @@ async function loadReviewerFeedback(submissionId) {
   }
 }
 
-// Render a 5-star line where `n` may be fractional. Filled \u2605, empty \u2606.
+/**
+ * Render a 5-star line where n may be fractional.
+ * Uses filled star (★), empty star (☆), and half indicator (½).
+ * @param {number} n - Rating value (0-5, may be fractional)
+ * @returns {string} String of star characters representing the rating
+ */
 function renderStars(n) {
-  var rounded = Math.round((Number(n) || 0) * 2) / 2; // half-star precision
+  var rounded = Math.round((Number(n) || 0) * 2) / 2;
   var full = Math.floor(rounded);
   var half = rounded - full >= 0.5 ? 1 : 0;
   var empty = 5 - full - half;
   var s = '';
   for (var i = 0; i < full; i++) s += '\u2605';
-  if (half) s += '\u00BD'; // a tiny "½" suffix on the last filled star
+  if (half) s += '\u00BD';
   for (var j = 0; j < empty; j++) s += '\u2606';
   return s;
 }
 
+/**
+ * Load the current user's existing review for a submission, if one exists.
+ * Pre-fills the star rating, comment textarea, and changes the submit button
+ * text to "Update Review".
+ * @async
+ * @param {string} submissionId - The submission ID to check for an existing review
+ */
 async function loadExistingReview(submissionId) {
   try {
     var res = await apiFetch('/api/reviews/' + submissionId);
@@ -400,15 +500,11 @@ async function loadExistingReview(submissionId) {
 
     if (myReview) {
       currentReview = myReview;
-
-      // Pre-fill stars
       setStarRating(myReview.rating);
 
-      // Pre-fill comment
       var commentBox = document.getElementById('review-comment');
       if (commentBox) commentBox.value = myReview.comment || '';
 
-      // Change button text
       var submitBtn = document.getElementById('submit-review-btn');
       if (submitBtn) submitBtn.textContent = 'Update Review';
     }
@@ -417,6 +513,10 @@ async function loadExistingReview(submissionId) {
   }
 }
 
+/**
+ * Toggle the .filled class on the first n stars in the #ratingStars container.
+ * @param {number} n - Number of stars to fill (1-5)
+ */
 function setStarRating(n) {
   var stars = document.querySelectorAll('#ratingStars .star');
   stars.forEach(function(s, j) {
@@ -428,17 +528,22 @@ function setStarRating(n) {
   });
 }
 
+/**
+ * Submit or update a review. Reads the selected star rating and comment text,
+ * validates that at least 1 star is selected, then either POSTs a new review
+ * or PUTs an update to an existing one. Handles 409 duplicate errors.
+ * On success, reloads the existing review to refresh state and button label.
+ * @async
+ */
 async function submitReview() {
   var submissionId = getQueryId();
   if (!submissionId) return;
 
-  // Read selected rating from .star.filled count
   var rating = document.querySelectorAll('#ratingStars .star.filled').length;
   var commentBox = document.getElementById('review-comment');
   var comment = commentBox ? commentBox.value.trim() : '';
   var submitBtn = document.getElementById('submit-review-btn');
 
-  // Validate rating >= 1
   if (rating < 1) {
     alert('Please select a star rating.');
     return;
@@ -476,11 +581,9 @@ async function submitReview() {
 
     alert(currentReview ? 'Review updated!' : 'Review submitted!');
 
-    // Re-call loadExistingReview to refresh state and button label
     loadExistingReview(submissionId);
 
-    // If the admin/editor "Reviewer Feedback" card is on the page, refresh
-    // it too so the freshly-saved review shows up immediately.
+    // Refresh the reviewer feedback card if visible
     var feedbackCard = document.getElementById('reviews-card');
     if (feedbackCard && feedbackCard.style.display !== 'none') {
       loadReviewerFeedback(submissionId);
@@ -503,9 +606,7 @@ document.addEventListener('DOMContentLoaded', function() {
   initReviewWidget();
 });
 
-
-// Globals are no longer needed for tab/filter wiring (CSP-friendly: handlers
-// are attached via addEventListener). Kept for backwards compatibility only.
+// Globals exposed for backwards compatibility with inline onclick handlers.
 window.switchReviewTab = switchReviewTab;
 window.submitReview = submitReview;
 window.filterReviewCards = filterReviewCards;
