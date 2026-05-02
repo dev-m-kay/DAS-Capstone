@@ -1,0 +1,919 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Source: js/admin.js</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Source: js/admin.js</h1>
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>/**
+ * @file Admin Panel client for the KCR Submission Manager.
+ *
+ * Powers `html/admin.html`: lists submissions, manages users, assigns
+ * reviewers, performs bulk status changes, and exports data. All data calls
+ * go through {@link adminFetch} which prefixes endpoints with `/api/admin`
+ * and surfaces non-2xx responses inline via a `{ __error, message }` shape.
+ *
+ * Requires `js/app.js` to be loaded first (provides `getToken` and
+ * `window.apiFetch`).
+ */
+
+/** @constant {string} Base path for all admin API endpoints. */
+const API = '/api/admin';
+
+/**
+ * Admin-scoped wrapper around the shared `apiFetch` (defined in `app.js` and
+ * exposed on `window`).
+ *
+ * IMPORTANT: this is named `adminFetch` (not `apiFetch`) on purpose — both
+ * files load as classic scripts into the same global scope, and `app.js`
+ * already declares `apiFetch` at module top level. Redeclaring `apiFetch`
+ * here with `const` would be a global-scope `SyntaxError` and abort *every*
+ * statement in this file (including the `DOMContentLoaded` listener that
+ * wires the page up).
+ *
+ * The shared fetch is looked up at *call* time rather than at module-load
+ * time so script-evaluation order can never leave us with a stale `undefined`
+ * reference.
+ *
+ * Prefixes the endpoint with {@link API}, redirects to login when no token is
+ * present, returns `{ __error: true, message }` on non-2xx responses (so
+ * callers can surface the error inline), and returns the parsed JSON body on
+ * success.
+ *
+ * @async
+ * @param {string} endpoint  Path relative to `/api/admin` (must start with `/`).
+ * @param {RequestInit} [options={}]  Standard `fetch` options (method, body, headers).
+ * @returns {Promise&lt;Object>} Parsed JSON on success; otherwise `{ __error: true, message }`.
+ */
+const adminFetch = async (endpoint, options = {}) => {
+  if (!getToken()) {
+    window.location.href = 'index.html';
+    return { __error: true, message: 'Not signed in' };
+  }
+  if (typeof window.apiFetch !== 'function') {
+    console.error('[admin] window.apiFetch is missing — js/app.js failed to load?');
+    return { __error: true, message: 'app.js failed to load' };
+  }
+
+  let res;
+  try {
+    res = await window.apiFetch(`${API}${endpoint}`, options);
+  } catch (err) {
+    console.error(`[admin] network error calling ${API}${endpoint}:`, err);
+    return { __error: true, message: err.message || 'Network error' };
+  }
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    console.error(`[admin] ${API}${endpoint} returned ${res.status}:`, data);
+    return { __error: true, message: data.error || `HTTP ${res.status}` };
+  }
+  return data;
+};
+
+// ---- Helpers ----
+
+/** @constant {string[]} Palette used to color user avatars; index = `userId % length`. */
+const AVATAR_COLORS = [
+  'var(--primary)', 'var(--success)', 'var(--danger)', '#7c3aed',
+  'var(--warning)', '#0ea5e9', '#ec4899', '#14b8a6',
+];
+
+/**
+ * Picks a stable avatar color for a user based on their numeric id.
+ *
+ * @param {number} id  User id.
+ * @returns {string} CSS color value from {@link AVATAR_COLORS}.
+ */
+function avatarColor(id) {
+  return AVATAR_COLORS[id % AVATAR_COLORS.length];
+}
+
+/**
+ * Builds initials (e.g. "JD") from a user's first and last name.
+ *
+ * @param {string} [firstName]
+ * @param {string} [lastName]
+ * @returns {string} Uppercased two-letter initials (may be empty).
+ */
+function getInitials(firstName, lastName) {
+  return ((firstName?.[0] || '') + (lastName?.[0] || '')).toUpperCase();
+}
+
+/**
+ * Renders a colored status pill for a submission.
+ *
+ * @param {('pending'|'in_review'|'accepted'|'rejected')} status
+ * @returns {string} HTML for a `&lt;span class="badge …">` element.
+ */
+function statusBadge(status) {
+  const map   = { pending: 'badge-pending', in_review: 'badge-review', accepted: 'badge-accepted', rejected: 'badge-rejected' };
+  const label = { pending: 'Pending', in_review: 'In Review', accepted: 'Accepted', rejected: 'Rejected' };
+  return `&lt;span class="badge ${map[status] || 'badge-pending'}">${label[status] || status}&lt;/span>`;
+}
+
+/**
+ * Maps a user role to the CSS class for its badge.
+ *
+ * @param {('admin'|'editor'|'reviewer'|'submitter')} role
+ * @returns {string} Badge CSS class name.
+ */
+function roleBadgeClass(role) {
+  return { admin: 'badge-rejected', editor: 'badge-review', reviewer: 'badge-info', submitter: 'badge-pending' }[role] || 'badge-pending';
+}
+
+/**
+ * Formats an ISO date string for display (e.g. "Mar 14, 2026").
+ *
+ * @param {string|null|undefined} dateStr  ISO 8601 timestamp.
+ * @returns {string} Localized short date, or an em-dash if unset.
+ */
+function formatDate(dateStr) {
+  if (!dateStr) return '\u2014';
+  return new Date(dateStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+/**
+ * Escapes a value for safe interpolation inside an HTML attribute.
+ *
+ * @param {*} str  Value to escape (will be coerced to string).
+ * @returns {string} Escaped attribute-safe string.
+ */
+function escapeAttr(str) {
+  return String(str).replace(/&amp;/g, '&amp;amp;').replace(/"/g, '&amp;quot;').replace(/'/g, '&amp;#39;').replace(/&lt;/g, '&amp;lt;');
+}
+
+// ---- Tab switching ----
+
+/**
+ * Switches the visible admin tab panel.
+ *
+ * Hides every `[id^="section-"]` block, shows `#section-&lt;name>`, and toggles
+ * `.active` on the matching tab button.
+ *
+ * @param {string} name              Suffix of the panel id to show.
+ * @param {HTMLElement} [el]         Tab button that triggered the switch.
+ * @returns {void}
+ */
+function showSection(name, el) {
+  document.querySelectorAll('[id^="section-"]').forEach(s => s.style.display = 'none');
+  const target = document.getElementById('section-' + name);
+  if (target) target.style.display = '';
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  if (el) el.classList.add('active');
+}
+
+// ================================================================
+//  SUBMISSIONS TAB  (populated via GET /api/admin/export)
+// ================================================================
+
+/** @type {Array&lt;Object>} Cached list of all submissions for client-side filtering. */
+let submissionsData = [];
+
+/**
+ * Loads every submission from `GET /api/admin/export`, caches the result in
+ * {@link submissionsData}, and refreshes the table + stat counters.
+ *
+ * @async
+ * @returns {Promise&lt;void>}
+ */
+async function loadSubmissions() {
+  const tbody = document.getElementById('submissions-tbody');
+  const data = await adminFetch('/export');
+  if (data &amp;&amp; data.__error) {
+    if (tbody) {
+      tbody.innerHTML = `&lt;tr>&lt;td colspan="9" style="text-align:center;padding:2rem;color:var(--danger);">Failed to load submissions: ${escapeAttr(data.message)}&lt;/td>&lt;/tr>`;
+    }
+    const count = document.getElementById('submissions-count');
+    if (count) count.textContent = 'Error';
+    return;
+  }
+  if (!data) return;
+
+  submissionsData = data.submissions || [];
+  renderSubmissions(submissionsData);
+  updateStats(submissionsData);
+}
+
+/**
+ * Renders the submissions table body and updates the "Showing X of Y" count.
+ *
+ * @param {Array&lt;Object>} list  Submissions to render (may be a filtered subset).
+ * @returns {void}
+ */
+function renderSubmissions(list) {
+  const tbody = document.getElementById('submissions-tbody');
+  if (!tbody) return;
+
+  if (list.length === 0) {
+    tbody.innerHTML = '&lt;tr>&lt;td colspan="10" style="text-align:center;padding:2rem;" class="text-muted">No submissions found&lt;/td>&lt;/tr>';
+    document.getElementById('submissions-count').textContent = 'No submissions';
+    return;
+  }
+
+  tbody.innerHTML = list.map(s => {
+    const rating = s.avg_rating ? parseFloat(s.avg_rating).toFixed(1) : '\u2014';
+    return `
+      &lt;tr data-submission-id="${escapeAttr(s.submission_id)}">
+        &lt;td>&lt;input type="checkbox" value="${escapeAttr(s.submission_id)}">&lt;/td>
+        &lt;td>&lt;strong>#${escapeAttr(s.submission_id)}&lt;/strong>&lt;/td>
+        &lt;td>${escapeAttr(s.title)}&lt;/td>
+        &lt;td>${escapeAttr(s.author_name)}&lt;/td>
+        &lt;td>${escapeAttr(s.genre)}&lt;/td>
+        &lt;td>${formatDate(s.created_at)}&lt;/td>
+        &lt;td>${statusBadge(s.status)}&lt;/td>
+        &lt;td>${rating}&lt;/td>
+        &lt;td>
+          &lt;div class="btn-group">
+            &lt;a href="submission-detail.html?id=${encodeURIComponent(s.submission_id)}" class="btn btn-secondary btn-sm">View&lt;/a>
+            &lt;button type="button" class="btn btn-secondary btn-sm" data-action="assign" data-submission-id="${escapeAttr(s.submission_id)}">Assign&lt;/button>
+            &lt;button type="button" class="btn btn-danger btn-sm" data-action="delete-submission" data-submission-id="${escapeAttr(s.submission_id)}" data-submission-title="${escapeAttr(s.title)}">Delete&lt;/button>
+          &lt;/div>
+        &lt;/td>
+      &lt;/tr>`;
+  }).join('');
+
+  document.getElementById('submissions-count').textContent =
+    `Showing ${list.length} of ${submissionsData.length} submissions`;
+}
+
+/**
+ * Updates the dashboard stat counters (`#stat-total`, `#stat-pending`,
+ * `#stat-accepted`).
+ *
+ * @param {Array&lt;Object>} submissions  Full submissions list.
+ * @returns {void}
+ */
+function updateStats(submissions) {
+  document.getElementById('stat-total').textContent    = submissions.length;
+  document.getElementById('stat-pending').textContent  = submissions.filter(s => s.status === 'pending').length;
+  document.getElementById('stat-accepted').textContent = submissions.filter(s => s.status === 'accepted').length;
+}
+
+/**
+ * Re-renders the submissions table after applying the current search query
+ * and status/genre filters to the cached {@link submissionsData}.
+ *
+ * @returns {void}
+ */
+function filterSubmissions() {
+  const query  = (document.getElementById('submissions-search')?.value || '').toLowerCase();
+  const status = document.getElementById('filter-status')?.value || '';
+  const genre  = document.getElementById('filter-genre')?.value || '';
+
+  const filtered = submissionsData.filter(s => {
+    if (status &amp;&amp; s.status !== status) return false;
+    if (genre  &amp;&amp; s.genre  !== genre)  return false;
+    if (query) {
+      const haystack = `${s.submission_id} ${s.title} ${s.author_name} ${s.genre}`.toLowerCase();
+      if (!haystack.includes(query)) return false;
+    }
+    return true;
+  });
+
+  renderSubmissions(filtered);
+}
+
+// ================================================================
+//  USER MANAGEMENT TAB
+// ================================================================
+
+/** @type {Array&lt;Object>} Cached list of users. */
+let usersData = [];
+
+/**
+ * Loads users from `GET /api/admin/users`, caches them in {@link usersData},
+ * renders the user table, and updates the user-count stat.
+ *
+ * @async
+ * @returns {Promise&lt;void>}
+ */
+async function loadUsers() {
+  const tbody = document.getElementById('users-tbody');
+  const data = await adminFetch('/users');
+  if (data &amp;&amp; data.__error) {
+    if (tbody) {
+      tbody.innerHTML = `&lt;tr>&lt;td colspan="6" style="text-align:center;padding:2rem;color:var(--danger);">Failed to load users: ${escapeAttr(data.message)}&lt;/td>&lt;/tr>`;
+    }
+    return;
+  }
+  if (!data) return;
+
+  usersData = Array.isArray(data) ? data : [];
+  renderUsers(usersData);
+  document.getElementById('stat-users').textContent = usersData.length;
+}
+
+/**
+ * Renders the users table body.
+ *
+ * @param {Array&lt;Object>} list  Users to render.
+ * @returns {void}
+ */
+function renderUsers(list) {
+  const tbody = document.getElementById('users-tbody');
+  if (!tbody) return;
+
+  if (list.length === 0) {
+    tbody.innerHTML = '&lt;tr>&lt;td colspan="6" style="text-align:center;padding:2rem;" class="text-muted">No users found&lt;/td>&lt;/tr>';
+    return;
+  }
+
+  tbody.innerHTML = list.map(u => {
+    const ini   = getInitials(u.first_name, u.last_name);
+    const color = avatarColor(u.id);
+    const name  = `${u.first_name} ${u.last_name}`;
+    const role  = u.role.charAt(0).toUpperCase() + u.role.slice(1);
+
+    return `
+      &lt;tr data-user-id="${u.id}">
+        &lt;td>
+          &lt;div style="display:flex;align-items:center;gap:.75rem;">
+            &lt;div style="width:32px;height:32px;border-radius:50%;background:${color};display:flex;align-items:center;justify-content:center;color:#fff;font-weight:600;font-size:.75rem;">${ini}&lt;/div>
+            &lt;strong>${escapeAttr(name)}&lt;/strong>
+          &lt;/div>
+        &lt;/td>
+        &lt;td>${escapeAttr(u.email)}&lt;/td>
+        &lt;td>&lt;span class="badge ${roleBadgeClass(u.role)}">${role}&lt;/span>&lt;/td>
+        &lt;td>${formatDate(u.created_at)}&lt;/td>
+        &lt;td>&lt;span class="badge badge-accepted">Active&lt;/span>&lt;/td>
+        &lt;td>
+          &lt;div class="btn-group">
+            &lt;button type="button" class="btn btn-secondary btn-sm" data-action="edit-role" data-user-id="${u.id}">Edit&lt;/button>
+            &lt;button type="button" class="btn btn-danger btn-sm" data-action="delete-user" data-user-id="${u.id}" data-user-name="${escapeAttr(name)}">Delete&lt;/button>
+          &lt;/div>
+        &lt;/td>
+      &lt;/tr>`;
+  }).join('');
+}
+
+// ---- Edit Role ----
+
+/**
+ * Opens the Edit Role modal pre-filled with the selected user's current role.
+ *
+ * @param {number} userId  Numeric user id from {@link usersData}.
+ * @returns {void}
+ */
+function openEditRoleModal(userId) {
+  const user = usersData.find(u => u.id === userId);
+  if (!user) return;
+
+  document.getElementById('editRoleUserId').value      = userId;
+  document.getElementById('editRoleName').textContent   = `${user.first_name} ${user.last_name}`;
+  document.getElementById('editRoleSelect').value       = user.role;
+  document.getElementById('editRoleModal').classList.add('show');
+}
+
+/**
+ * Submits the Edit Role modal: PUTs the new role to
+ * `/api/admin/users/:id/role`, closes the modal, and reloads the users list.
+ *
+ * @async
+ * @returns {Promise&lt;void>}
+ */
+async function saveUserRole() {
+  const userId = document.getElementById('editRoleUserId').value;
+  const role   = document.getElementById('editRoleSelect').value;
+
+  const result = await adminFetch(`/users/${userId}/role`, {
+    method: 'PUT',
+    body: JSON.stringify({ role }),
+  });
+
+  if (!result || result.__error) {
+    if (result &amp;&amp; result.__error) alert(result.message);
+    return;
+  }
+  document.getElementById('editRoleModal').classList.remove('show');
+  loadUsers();
+}
+
+// ---- Delete User ----
+
+/**
+ * Prompts for confirmation, then deletes the user via
+ * `DELETE /api/admin/users/:id`. Reloads the users list on success.
+ *
+ * @async
+ * @param {number} userId  Id of the user to delete.
+ * @param {string} name    Display name shown in the confirmation prompt.
+ * @returns {Promise&lt;void>}
+ */
+async function confirmDeleteUser(userId, name) {
+  const warning =
+    `Delete ${name}?\n\n` +
+    'This will also permanently remove every record tied to this account:\n' +
+    '  • their submissions (and uploaded files)\n' +
+    '  • reviews they have written\n' +
+    '  • messages they have sent\n' +
+    '  • reviewer assignments\n\n' +
+    'This cannot be undone.';
+  if (!confirm(warning)) return;
+
+  const result = await adminFetch(`/users/${userId}`, { method: 'DELETE' });
+  if (result &amp;&amp; result.__error) {
+    alert(result.message);
+    return;
+  }
+  if (result) loadUsers();
+}
+
+/**
+ * Prompts for confirmation, then deletes a submission via
+ * `DELETE /api/submissions/:id`. The schema-level CASCADE handles dependent
+ * rows (files, reviews, assignments, messages); we just refresh the table.
+ *
+ * @async
+ * @param {string} submissionId  Public id, e.g. "KCR-0001".
+ * @param {string} title         Display title used in the confirm prompt.
+ * @returns {Promise&lt;void>}
+ */
+async function confirmDeleteSubmission(submissionId, title) {
+  const warning =
+    `Delete submission "${title}" (#${submissionId})?\n\n` +
+    'This will also permanently remove every record tied to this submission:\n' +
+    '  • all uploaded files\n' +
+    '  • all reviews and ratings\n' +
+    '  • all reviewer assignments\n' +
+    '  • the discussion thread\n\n' +
+    'This cannot be undone.';
+  if (!confirm(warning)) return;
+
+  // Submissions live under /api/submissions, not /api/admin, so fetch the
+  // global apiFetch directly instead of routing through adminFetch.
+  try {
+    const res = await window.apiFetch(
+      `/api/submissions/${encodeURIComponent(submissionId)}`,
+      { method: 'DELETE' }
+    );
+    let body = {};
+    try { body = await res.json(); } catch (e) { /* ignore */ }
+    if (!res.ok) {
+      alert(body.error || `Failed to delete submission (HTTP ${res.status})`);
+      return;
+    }
+    await loadSubmissions();
+    await loadWorkload();
+  } catch (err) {
+    console.error(err);
+    alert('Failed to delete submission');
+  }
+}
+
+// ================================================================
+//  REVIEWER ASSIGNMENTS TAB
+// ================================================================
+
+/** @type {Array&lt;Object>} Cached reviewer workload (one row per reviewer/editor). */
+let workloadData = [];
+
+/**
+ * Loads reviewer workload from `GET /api/admin/workload` and renders the
+ * Assignments grid.
+ *
+ * @async
+ * @returns {Promise&lt;void>}
+ */
+async function loadWorkload() {
+  const grid = document.getElementById('assignments-grid');
+  const data = await adminFetch('/workload');
+  if (data &amp;&amp; data.__error) {
+    if (grid) {
+      grid.innerHTML = `&lt;p class="text-muted" style="padding:2rem;text-align:center;color:var(--danger);">Failed to load reviewers: ${escapeAttr(data.message)}&lt;/p>`;
+    }
+    return;
+  }
+  if (!data) return;
+
+  workloadData = Array.isArray(data) ? data : [];
+  renderWorkload(workloadData);
+}
+
+/**
+ * Renders one card per reviewer in the Assignments grid, with a colored
+ * progress bar showing their current workload (`assigned_count / 10`).
+ *
+ * @param {Array&lt;Object>} list  Workload rows from `/api/admin/workload`.
+ * @returns {void}
+ */
+function renderWorkload(list) {
+  const container = document.getElementById('assignments-grid');
+  if (!container) return;
+
+  if (list.length === 0) {
+    container.innerHTML = '&lt;p class="text-muted" style="padding:2rem;text-align:center;">No reviewers found&lt;/p>';
+    return;
+  }
+
+  const MAX_LOAD = 10;
+
+  container.innerHTML = list.map(r => {
+    const ini   = getInitials(r.first_name, r.last_name);
+    const color = avatarColor(r.id);
+    const count = parseInt(r.assigned_count, 10);
+    const pct   = Math.min(Math.round((count / MAX_LOAD) * 100), 100);
+    const fill  = pct >= 70 ? 'yellow' : pct >= 40 ? 'green' : 'blue';
+
+    return `
+      &lt;div class="card">
+        &lt;div class="card-header">
+          &lt;div style="display:flex;align-items:center;gap:.75rem;">
+            &lt;div style="width:40px;height:40px;border-radius:50%;background:${color};display:flex;align-items:center;justify-content:center;color:#fff;font-weight:600;font-size:.85rem;">${ini}&lt;/div>
+            &lt;div>
+              &lt;strong>${escapeAttr(r.first_name)} ${escapeAttr(r.last_name)}&lt;/strong>
+              &lt;div class="text-small text-muted">${escapeAttr(r.email)}&lt;/div>
+            &lt;/div>
+          &lt;/div>
+        &lt;/div>
+        &lt;div class="card-body">
+          &lt;div style="display:flex;justify-content:space-between;margin-bottom:.75rem;">
+            &lt;span class="text-small text-muted">Workload&lt;/span>
+            &lt;span class="text-small" style="font-weight:600;">${count} / ${MAX_LOAD}&lt;/span>
+          &lt;/div>
+          &lt;div class="progress-bar">
+            &lt;div class="fill ${fill}" style="width:${pct}%;">&lt;/div>
+          &lt;/div>
+        &lt;/div>
+      &lt;/div>`;
+  }).join('');
+}
+
+// ================================================================
+//  ASSIGN REVIEWER MODAL
+// ================================================================
+
+/** @type {?string} Submission id the Assign-Reviewer modal is currently targeting. */
+let assignTargetSubmissionId = null;
+
+/**
+ * Opens the Assign Reviewer modal for a given submission and populates it
+ * with checkbox rows for every reviewer in {@link workloadData}.
+ *
+ * @param {string} submissionId  Public submission id (e.g. "KCR-0001").
+ * @returns {void}
+ */
+async function openAssignModal(submissionId) {
+  assignTargetSubmissionId = submissionId;
+  document.getElementById('assignSubmissionLabel').innerHTML =
+    `Manage reviewers for submission &lt;strong>#${escapeAttr(submissionId)}&lt;/strong>`;
+
+  const list = document.getElementById('assignReviewerList');
+  if (!list) return;
+
+  // Render an instant skeleton so the modal feels responsive while we
+  // resolve the currently-assigned reviewer list.
+  list.innerHTML = '&lt;p class="text-muted">Loading reviewers\u2026&lt;/p>';
+  document.getElementById('assignModal').classList.add('show');
+
+  // Fetch the currently-assigned reviewers so we can show them up top with
+  // a Remove button. The endpoint requires any caller to have permission to
+  // see reviewer identity; admins always do.
+  let assigned = [];
+  try {
+    const res = await window.apiFetch(
+      `/api/submissions/${encodeURIComponent(submissionId)}/reviewers`
+    );
+    if (res &amp;&amp; res.ok) assigned = await res.json();
+  } catch (err) {
+    console.error('Failed to load assigned reviewers:', err);
+  }
+
+  const assignedIds = new Set((assigned || []).map(r => r.id));
+  renderAssignModalBody(submissionId, assigned, assignedIds);
+}
+
+// Render two sections inside the Assign Reviewer modal:
+//   1. "Currently assigned" — chips with a Remove (×) button.
+//   2. "Add reviewers" — checkbox list of every reviewer/editor not yet
+//      assigned to this submission, drawn from `workloadData`.
+function renderAssignModalBody(submissionId, assigned, assignedIds) {
+  const list = document.getElementById('assignReviewerList');
+  if (!list) return;
+
+  const assignedHtml = assigned.length === 0
+    ? '&lt;p class="text-muted text-small" style="margin:0;">No reviewers assigned yet.&lt;/p>'
+    : assigned.map(r => {
+        const ini   = getInitials(r.first_name, r.last_name);
+        const color = avatarColor(r.id);
+        return `
+          &lt;div style="display:flex;align-items:center;gap:.75rem;padding:.5rem .75rem;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface-alt,#f8fafc);">
+            &lt;div style="width:28px;height:28px;border-radius:50%;background:${color};display:flex;align-items:center;justify-content:center;color:#fff;font-weight:600;font-size:.65rem;">${ini}&lt;/div>
+            &lt;div style="flex:1;min-width:0;">
+              &lt;div style="font-weight:600;font-size:.85rem;">${escapeAttr(r.first_name)} ${escapeAttr(r.last_name)}&lt;/div>
+              &lt;div class="text-small text-muted">${escapeAttr(r.email)}&lt;/div>
+            &lt;/div>
+            &lt;button type="button" class="btn btn-danger btn-sm"
+                    data-action="remove-assignment"
+                    data-reviewer-id="${r.id}"
+                    data-reviewer-name="${escapeAttr(r.first_name)} ${escapeAttr(r.last_name)}">Remove&lt;/button>
+          &lt;/div>`;
+      }).join('');
+
+  // Hide reviewers already assigned from the add list — re-assigning would
+  // just bounce off the unique-constraint 409 anyway.
+  const candidates = (workloadData || []).filter(r => !assignedIds.has(r.id));
+  const addHtml = candidates.length === 0
+    ? '&lt;p class="text-muted text-small" style="margin:0;">Every reviewer is already assigned.&lt;/p>'
+    : candidates.map(r => {
+        const ini   = getInitials(r.first_name, r.last_name);
+        const color = avatarColor(r.id);
+        const count = parseInt(r.assigned_count, 10);
+        return `
+          &lt;label style="display:flex;align-items:center;gap:.75rem;padding:.75rem;border:1px solid var(--border);border-radius:var(--radius);cursor:pointer;">
+            &lt;input type="checkbox" value="${r.id}">
+            &lt;div style="width:32px;height:32px;border-radius:50%;background:${color};display:flex;align-items:center;justify-content:center;color:#fff;font-weight:600;font-size:.7rem;">${ini}&lt;/div>
+            &lt;div>
+              &lt;div style="font-weight:600;font-size:.85rem;">${escapeAttr(r.first_name)} ${escapeAttr(r.last_name)}&lt;/div>
+              &lt;div class="text-small text-muted">${count} / 10 assignments&lt;/div>
+            &lt;/div>
+          &lt;/label>`;
+      }).join('');
+
+  list.innerHTML = `
+    &lt;div style="margin-bottom:1rem;">
+      &lt;div class="text-small" style="font-weight:600;margin-bottom:.5rem;">Currently assigned&lt;/div>
+      &lt;div style="display:flex;flex-direction:column;gap:.5rem;">${assignedHtml}&lt;/div>
+    &lt;/div>
+    &lt;div>
+      &lt;div class="text-small" style="font-weight:600;margin-bottom:.5rem;">Add reviewers&lt;/div>
+      &lt;div style="display:flex;flex-direction:column;gap:.5rem;">${addHtml}&lt;/div>
+    &lt;/div>`;
+
+  // Wire Remove buttons. Each click DELETEs the assignment and re-renders
+  // the modal in place so the admin can keep adjusting.
+  list.querySelectorAll('button[data-action="remove-assignment"]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const reviewerId   = btn.getAttribute('data-reviewer-id');
+      const reviewerName = btn.getAttribute('data-reviewer-name') || 'this reviewer';
+      if (!reviewerId) return;
+      if (!confirm(`Remove ${reviewerName} from #${submissionId}?`)) return;
+
+      const result = await adminFetch(
+        `/assign/${encodeURIComponent(submissionId)}/${encodeURIComponent(reviewerId)}`,
+        { method: 'DELETE' }
+      );
+      if (result &amp;&amp; result.__error) {
+        alert(result.message || 'Failed to remove reviewer');
+        return;
+      }
+      // Refresh both the modal and the workload tab so reviewer load
+      // counts stay in sync with reality.
+      await loadWorkload();
+      await openAssignModal(submissionId);
+    });
+  });
+}
+
+/**
+ * Submits the Assign Reviewer modal: POSTs one assignment per checked
+ * reviewer to `/api/admin/assign`, closes the modal, then refreshes
+ * workload and submissions.
+ *
+ * @async
+ * @returns {Promise&lt;void>}
+ */
+async function submitAssignments() {
+  const checked = document.querySelectorAll('#assignReviewerList input[type="checkbox"]:checked');
+  if (checked.length === 0) {
+    alert('Select at least one reviewer');
+    return;
+  }
+
+  let successCount = 0;
+  const errors = [];
+  for (const cb of checked) {
+    const result = await adminFetch('/assign', {
+      method: 'POST',
+      body: JSON.stringify({
+        submission_id: assignTargetSubmissionId,
+        reviewer_id: parseInt(cb.value, 10),
+      }),
+    });
+    if (result &amp;&amp; !result.__error) {
+      successCount++;
+    } else if (result &amp;&amp; result.__error) {
+      errors.push(result.message);
+    }
+  }
+
+  document.getElementById('assignModal').classList.remove('show');
+  if (successCount > 0) {
+    let msg = `${successCount} reviewer(s) assigned successfully`;
+    if (errors.length) msg += `\n(${errors.length} failed: ${errors.join('; ')})`;
+    alert(msg);
+    loadWorkload();
+    loadSubmissions();
+  } else if (errors.length) {
+    alert(`Failed to assign reviewers: ${errors.join('; ')}`);
+  }
+}
+
+// ================================================================
+//  BULK STATUS UPDATE
+// ================================================================
+
+/**
+ * Opens the Bulk Status modal if at least one row checkbox is selected.
+ * Updates the displayed count of affected submissions.
+ *
+ * @returns {void}
+ */
+function openBulkStatusModal() {
+  const checked = document.querySelectorAll('#submissions-tbody input[type="checkbox"]:checked');
+  if (checked.length === 0) {
+    alert('Select at least one submission first');
+    return;
+  }
+  document.getElementById('bulkCount').textContent = checked.length;
+  document.getElementById('bulkStatusModal').classList.add('show');
+}
+
+/**
+ * Submits the Bulk Status modal: PUTs the chosen status and the array of
+ * checked submission ids to `/api/admin/submissions/bulk-status`, then
+ * reloads submissions.
+ *
+ * @async
+ * @returns {Promise&lt;void>}
+ */
+async function submitBulkStatus() {
+  const checked = document.querySelectorAll('#submissions-tbody input[type="checkbox"]:checked');
+  const ids     = [...checked].map(cb => cb.value);
+  const status  = document.getElementById('bulkStatusSelect').value;
+
+  const result = await adminFetch('/submissions/bulk-status', {
+    method: 'PUT',
+    body: JSON.stringify({ submission_ids: ids, status }),
+  });
+
+  if (result &amp;&amp; result.__error) {
+    alert(result.message);
+    return;
+  }
+  if (result) {
+    document.getElementById('bulkStatusModal').classList.remove('show');
+    alert(result.message);
+    loadSubmissions();
+  }
+}
+
+// ================================================================
+//  EXPORT DATA
+// ================================================================
+
+/**
+ * Fetches the full export from `GET /api/admin/export` and triggers a
+ * client-side download as `kcr-export-YYYY-MM-DD.json`.
+ *
+ * @async
+ * @returns {Promise&lt;void>}
+ */
+async function submitExport() {
+  const data = await adminFetch('/export');
+  if (data &amp;&amp; data.__error) {
+    alert(`Export failed: ${data.message}`);
+    return;
+  }
+  if (!data) return;
+
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href     = url;
+  a.download = `kcr-export-${new Date().toISOString().slice(0, 10)}.json`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+
+  document.getElementById('exportModal').classList.remove('show');
+}
+
+// ================================================================
+//  INIT
+// ================================================================
+
+/**
+ * Bootstraps the admin page once the DOM is ready: redirects to login if
+ * unauthenticated, kicks off initial data loads, and wires up all static
+ * (and delegated) event handlers in a CSP-friendly way (no inline `onclick`).
+ */
+document.addEventListener('DOMContentLoaded', () => {
+  console.log('[admin] DOMContentLoaded — booting admin panel');
+  if (!getToken()) {
+    console.warn('[admin] no auth token, redirecting to index');
+    window.location.href = 'index.html';
+    return;
+  }
+  console.log('[admin] window.apiFetch is', typeof window.apiFetch);
+
+  loadSubmissions();
+  loadUsers();
+  loadWorkload();
+
+  // ---- Static-button wiring (CSP-friendly: no inline onclick) ----
+
+  // Tab buttons
+  document.querySelectorAll('[data-admin-section]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      showSection(btn.getAttribute('data-admin-section'), btn);
+    });
+  });
+
+  // Filter inputs
+  document.getElementById('submissions-search')?.addEventListener('input', filterSubmissions);
+  document.getElementById('filter-status')?.addEventListener('change', filterSubmissions);
+  document.getElementById('filter-genre')?.addEventListener('change', filterSubmissions);
+
+  // Modal-open / submit buttons (top bar + modals)
+  document.querySelectorAll('[data-action="open-modal"]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const id = btn.getAttribute('data-modal-target');
+      const modal = id &amp;&amp; document.getElementById(id);
+      if (modal) modal.classList.add('show');
+    });
+  });
+  document.querySelector('[data-action="open-bulk-status"]')?.addEventListener('click', openBulkStatusModal);
+  document.querySelector('[data-action="submit-assignments"]')?.addEventListener('click', submitAssignments);
+  document.querySelector('[data-action="save-user-role"]')?.addEventListener('click', saveUserRole);
+  document.querySelector('[data-action="submit-bulk-status"]')?.addEventListener('click', submitBulkStatus);
+  document.querySelector('[data-action="submit-export"]')?.addEventListener('click', submitExport);
+
+  // ---- Delegated handlers for dynamically-rendered table rows ----
+
+  document.getElementById('submissions-tbody')?.addEventListener('click', (e) => {
+    const assignBtn = e.target.closest('button[data-action="assign"]');
+    if (assignBtn) {
+      const id = assignBtn.getAttribute('data-submission-id');
+      if (id) openAssignModal(id);
+      return;
+    }
+    const delBtn = e.target.closest('button[data-action="delete-submission"]');
+    if (delBtn) {
+      const id    = delBtn.getAttribute('data-submission-id');
+      const title = delBtn.getAttribute('data-submission-title') || id;
+      if (id) confirmDeleteSubmission(id, title);
+    }
+  });
+
+  document.getElementById('users-tbody')?.addEventListener('click', (e) => {
+    const editBtn = e.target.closest('button[data-action="edit-role"]');
+    if (editBtn) {
+      const uid = parseInt(editBtn.getAttribute('data-user-id'), 10);
+      if (Number.isInteger(uid)) openEditRoleModal(uid);
+      return;
+    }
+    const delBtn = e.target.closest('button[data-action="delete-user"]');
+    if (delBtn) {
+      const uid = parseInt(delBtn.getAttribute('data-user-id'), 10);
+      const name = delBtn.getAttribute('data-user-name') || 'this user';
+      if (Number.isInteger(uid)) confirmDeleteUser(uid, name);
+    }
+  });
+});
+
+</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Global</h3><ul><li><a href="global.html#AVATAR_COLORS">AVATAR_COLORS</a></li><li><a href="global.html#Base">Base</a></li><li><a href="global.html#Palette">Palette</a></li><li><a href="global.html#Port">Port</a></li><li><a href="global.html#Runtime">Runtime</a></li><li><a href="global.html#UPLOAD_DIR">UPLOAD_DIR</a></li><li><a href="global.html#adminFetch">adminFetch</a></li><li><a href="global.html#apiFetch">apiFetch</a></li><li><a href="global.html#assignReviewer">assignReviewer</a></li><li><a href="global.html#assignTargetSubmissionId">assignTargetSubmissionId</a></li><li><a href="global.html#authenticate">authenticate</a></li><li><a href="global.html#authorize">authorize</a></li><li><a href="global.html#avatarColor">avatarColor</a></li><li><a href="global.html#bulkUpdateStatus">bulkUpdateStatus</a></li><li><a href="global.html#canAccessSubmission">canAccessSubmission</a></li><li><a href="global.html#canDiscussSubmission">canDiscussSubmission</a></li><li><a href="global.html#confirmDeleteSubmission">confirmDeleteSubmission</a></li><li><a href="global.html#confirmDeleteUser">confirmDeleteUser</a></li><li><a href="global.html#currentReview">currentReview</a></li><li><a href="global.html#deleteUser">deleteUser</a></li><li><a href="global.html#displayUserName">displayUserName</a></li><li><a href="global.html#displayUserRole">displayUserRole</a></li><li><a href="global.html#escapeAttr">escapeAttr</a></li><li><a href="global.html#escapeHtml">escapeHtml</a></li><li><a href="global.html#exportData">exportData</a></li><li><a href="global.html#filterReviewCards">filterReviewCards</a></li><li><a href="global.html#filterSubmissions">filterSubmissions</a></li><li><a href="global.html#formatDate">formatDate</a></li><li><a href="global.html#generateToken">generateToken</a></li><li><a href="global.html#getAllUsers">getAllUsers</a></li><li><a href="global.html#getInitials">getInitials</a></li><li><a href="global.html#getQueryId">getQueryId</a></li><li><a href="global.html#getReviewerWorkload">getReviewerWorkload</a></li><li><a href="global.html#getToken">getToken</a></li><li><a href="global.html#getUser">getUser</a></li><li><a href="global.html#initReviewQueue">initReviewQueue</a></li><li><a href="global.html#initReviewWidget">initReviewWidget</a></li><li><a href="global.html#initializeDatabase">initializeDatabase</a></li><li><a href="global.html#loadAssignments">loadAssignments</a></li><li><a href="global.html#loadExistingReview">loadExistingReview</a></li><li><a href="global.html#loadReviewerFeedback">loadReviewerFeedback</a></li><li><a href="global.html#loadSubmissions">loadSubmissions</a></li><li><a href="global.html#loadUsers">loadUsers</a></li><li><a href="global.html#loadWorkload">loadWorkload</a></li><li><a href="global.html#login">login</a></li><li><a href="global.html#me">me</a></li><li><a href="global.html#myAssignments">myAssignments</a></li><li><a href="global.html#openAssignModal">openAssignModal</a></li><li><a href="global.html#openBulkStatusModal">openBulkStatusModal</a></li><li><a href="global.html#openEditRoleModal">openEditRoleModal</a></li><li><a href="global.html#pool">pool</a></li><li><a href="global.html#populateSidebar">populateSidebar</a></li><li><a href="global.html#register">register</a></li><li><a href="global.html#removeAssignment">removeAssignment</a></li><li><a href="global.html#renderNavigationByRole">renderNavigationByRole</a></li><li><a href="global.html#renderReviewCards">renderReviewCards</a></li><li><a href="global.html#renderReviewStats">renderReviewStats</a></li><li><a href="global.html#renderStars">renderStars</a></li><li><a href="global.html#renderSubmissions">renderSubmissions</a></li><li><a href="global.html#renderUsers">renderUsers</a></li><li><a href="global.html#renderWorkload">renderWorkload</a></li><li><a href="global.html#requireAuth">requireAuth</a></li><li><a href="global.html#roleBadgeClass">roleBadgeClass</a></li><li><a href="global.html#saveUserRole">saveUserRole</a></li><li><a href="global.html#setStarRating">setStarRating</a></li><li><a href="global.html#setToken">setToken</a></li><li><a href="global.html#setUser">setUser</a></li><li><a href="global.html#showSection">showSection</a></li><li><a href="global.html#signOut">signOut</a></li><li><a href="global.html#statusBadge">statusBadge</a></li><li><a href="global.html#submissionsData">submissionsData</a></li><li><a href="global.html#submitAssignments">submitAssignments</a></li><li><a href="global.html#submitBulkStatus">submitBulkStatus</a></li><li><a href="global.html#submitExport">submitExport</a></li><li><a href="global.html#submitReview">submitReview</a></li><li><a href="global.html#switchReviewTab">switchReviewTab</a></li><li><a href="global.html#updateStats">updateStats</a></li><li><a href="global.html#updateUserRole">updateUserRole</a></li><li><a href="global.html#userModel">userModel</a></li><li><a href="global.html#usersData">usersData</a></li><li><a href="global.html#workloadData">workloadData</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.5</a> on Fri May 01 2026 21:29:55 GMT-0500 (Central Daylight Time)
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>

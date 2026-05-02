@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Source: server/config/db.js</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Source: server/config/db.js</h1>
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>/**
+ * @file PostgreSQL connection pool and schema bootstrap.
+ *
+ * Exposes a shared `pg.Pool` connected to the Supabase-hosted Postgres
+ * instance specified by `DATABASE_URL`, plus an `initializeDatabase()`
+ * helper that creates the application schema (tables + Row Level Security)
+ * if it does not already exist.
+ *
+ * The pool is intentionally a module-level singleton so every controller and
+ * model shares the same connection limits.
+ */
+
+const { Pool } = require('pg');
+require('dotenv').config();
+
+/**
+ * Shared connection pool. SSL is required by Supabase; we disable strict
+ * cert checking because Supabase's signed cert chain isn't always available
+ * in CI environments.
+ *
+ * @type {import('pg').Pool}
+ */
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: { rejectUnauthorized: false }
+});
+
+// Verify connection on startup
+pool.query('SELECT NOW()')
+  .then(() => console.log('Connected to Supabase PostgreSQL'))
+  .catch(err => {
+    console.error('Database connection failed:', err.message);
+    process.exit(1);
+  });
+
+/**
+ * Creates the application schema if it does not already exist.
+ *
+ * Idempotent — uses `CREATE TABLE IF NOT EXISTS` for every table and enables
+ * Row Level Security on each. Called once at server startup from
+ * `server/index.js`.
+ *
+ * @async
+ * @returns {Promise&lt;void>} Resolves once all DDL statements have run.
+ * @throws {Error} If the underlying `pool.query` call fails.
+ */
+async function initializeDatabase() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS users (
+      id            SERIAL PRIMARY KEY,
+      first_name    TEXT    NOT NULL,
+      last_name     TEXT    NOT NULL,
+      email         TEXT    NOT NULL UNIQUE,
+      password_hash TEXT    NOT NULL,
+      role          TEXT    NOT NULL DEFAULT 'submitter'
+                           CHECK(role IN ('admin','editor','reviewer','submitter')),
+      bio           TEXT    DEFAULT '',
+      created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS submissions (
+      id             SERIAL PRIMARY KEY,
+      submission_id  TEXT    NOT NULL UNIQUE,
+      user_id        INTEGER NOT NULL REFERENCES users(id),
+      title          TEXT    NOT NULL,
+      genre          TEXT    NOT NULL,
+      word_count     INTEGER,
+      bio            TEXT    DEFAULT '',
+      notes          TEXT    DEFAULT '',
+      status         TEXT    NOT NULL DEFAULT 'pending'
+                            CHECK(status IN ('pending','in_review','accepted','rejected')),
+      created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS submission_files (
+      id             SERIAL PRIMARY KEY,
+      submission_id  INTEGER NOT NULL REFERENCES submissions(id) ON DELETE CASCADE,
+      filename       TEXT    NOT NULL,
+      original_name  TEXT    NOT NULL,
+      mimetype       TEXT    NOT NULL,
+      size           INTEGER NOT NULL,
+      created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    -- File bytes live in the DB so they are available to any server
+    -- instance, not just the box that took the upload. Idempotent:
+    -- existing rows from the disk-only era keep data = NULL and the
+    -- download route falls back to /uploads for those.
+    ALTER TABLE submission_files ADD COLUMN IF NOT EXISTS data BYTEA;
+
+    CREATE TABLE IF NOT EXISTS reviews (
+      id             SERIAL PRIMARY KEY,
+      submission_id  INTEGER NOT NULL REFERENCES submissions(id) ON DELETE CASCADE,
+      reviewer_id    INTEGER NOT NULL REFERENCES users(id),
+      rating         INTEGER CHECK(rating BETWEEN 1 AND 5),
+      comment        TEXT    DEFAULT '',
+      created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE(submission_id, reviewer_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS messages (
+      id             SERIAL PRIMARY KEY,
+      submission_id  INTEGER NOT NULL REFERENCES submissions(id) ON DELETE CASCADE,
+      sender_id      INTEGER NOT NULL REFERENCES users(id),
+      body           TEXT    NOT NULL,
+      created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS assignments (
+      id             SERIAL PRIMARY KEY,
+      submission_id  INTEGER NOT NULL REFERENCES submissions(id) ON DELETE CASCADE,
+      reviewer_id    INTEGER NOT NULL REFERENCES users(id),
+      assigned_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE(submission_id, reviewer_id)
+    );
+
+    -- Shared "Staff Lounge" channel: a single chat that any admin / editor /
+    -- reviewer can read and post to. Not tied to a submission.
+    CREATE TABLE IF NOT EXISTS staff_messages (
+      id          SERIAL PRIMARY KEY,
+      sender_id   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      body        TEXT    NOT NULL,
+      created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_staff_messages_created
+      ON staff_messages(created_at);
+
+    -- 1-on-1 direct messages between any two users (intended for staff↔staff
+    -- communication, but the FK doesn't restrict by role — the API layer does).
+    CREATE TABLE IF NOT EXISTS direct_messages (
+      id            SERIAL PRIMARY KEY,
+      sender_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      recipient_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      body          TEXT    NOT NULL,
+      created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      CONSTRAINT no_self_dm CHECK (sender_id &lt;> recipient_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_dm_pair
+      ON direct_messages(LEAST(sender_id, recipient_id),
+                         GREATEST(sender_id, recipient_id),
+                         created_at);
+
+    -- Enable Row Level Security on all tables
+    ALTER TABLE users ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE submissions ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE submission_files ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE reviews ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE messages ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE assignments ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE staff_messages ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE direct_messages ENABLE ROW LEVEL SECURITY;
+  `);
+}
+
+module.exports = { pool, initializeDatabase };
+</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Global</h3><ul><li><a href="global.html#AVATAR_COLORS">AVATAR_COLORS</a></li><li><a href="global.html#Base">Base</a></li><li><a href="global.html#Palette">Palette</a></li><li><a href="global.html#Port">Port</a></li><li><a href="global.html#Runtime">Runtime</a></li><li><a href="global.html#UPLOAD_DIR">UPLOAD_DIR</a></li><li><a href="global.html#adminFetch">adminFetch</a></li><li><a href="global.html#apiFetch">apiFetch</a></li><li><a href="global.html#assignReviewer">assignReviewer</a></li><li><a href="global.html#assignTargetSubmissionId">assignTargetSubmissionId</a></li><li><a href="global.html#authenticate">authenticate</a></li><li><a href="global.html#authorize">authorize</a></li><li><a href="global.html#avatarColor">avatarColor</a></li><li><a href="global.html#bulkUpdateStatus">bulkUpdateStatus</a></li><li><a href="global.html#canAccessSubmission">canAccessSubmission</a></li><li><a href="global.html#canDiscussSubmission">canDiscussSubmission</a></li><li><a href="global.html#confirmDeleteSubmission">confirmDeleteSubmission</a></li><li><a href="global.html#confirmDeleteUser">confirmDeleteUser</a></li><li><a href="global.html#currentReview">currentReview</a></li><li><a href="global.html#deleteUser">deleteUser</a></li><li><a href="global.html#displayUserName">displayUserName</a></li><li><a href="global.html#displayUserRole">displayUserRole</a></li><li><a href="global.html#escapeAttr">escapeAttr</a></li><li><a href="global.html#escapeHtml">escapeHtml</a></li><li><a href="global.html#exportData">exportData</a></li><li><a href="global.html#filterReviewCards">filterReviewCards</a></li><li><a href="global.html#filterSubmissions">filterSubmissions</a></li><li><a href="global.html#formatDate">formatDate</a></li><li><a href="global.html#generateToken">generateToken</a></li><li><a href="global.html#getAllUsers">getAllUsers</a></li><li><a href="global.html#getInitials">getInitials</a></li><li><a href="global.html#getQueryId">getQueryId</a></li><li><a href="global.html#getReviewerWorkload">getReviewerWorkload</a></li><li><a href="global.html#getToken">getToken</a></li><li><a href="global.html#getUser">getUser</a></li><li><a href="global.html#initReviewQueue">initReviewQueue</a></li><li><a href="global.html#initReviewWidget">initReviewWidget</a></li><li><a href="global.html#initializeDatabase">initializeDatabase</a></li><li><a href="global.html#loadAssignments">loadAssignments</a></li><li><a href="global.html#loadExistingReview">loadExistingReview</a></li><li><a href="global.html#loadReviewerFeedback">loadReviewerFeedback</a></li><li><a href="global.html#loadSubmissions">loadSubmissions</a></li><li><a href="global.html#loadUsers">loadUsers</a></li><li><a href="global.html#loadWorkload">loadWorkload</a></li><li><a href="global.html#login">login</a></li><li><a href="global.html#me">me</a></li><li><a href="global.html#myAssignments">myAssignments</a></li><li><a href="global.html#openAssignModal">openAssignModal</a></li><li><a href="global.html#openBulkStatusModal">openBulkStatusModal</a></li><li><a href="global.html#openEditRoleModal">openEditRoleModal</a></li><li><a href="global.html#pool">pool</a></li><li><a href="global.html#populateSidebar">populateSidebar</a></li><li><a href="global.html#register">register</a></li><li><a href="global.html#removeAssignment">removeAssignment</a></li><li><a href="global.html#renderNavigationByRole">renderNavigationByRole</a></li><li><a href="global.html#renderReviewCards">renderReviewCards</a></li><li><a href="global.html#renderReviewStats">renderReviewStats</a></li><li><a href="global.html#renderStars">renderStars</a></li><li><a href="global.html#renderSubmissions">renderSubmissions</a></li><li><a href="global.html#renderUsers">renderUsers</a></li><li><a href="global.html#renderWorkload">renderWorkload</a></li><li><a href="global.html#requireAuth">requireAuth</a></li><li><a href="global.html#roleBadgeClass">roleBadgeClass</a></li><li><a href="global.html#saveUserRole">saveUserRole</a></li><li><a href="global.html#setStarRating">setStarRating</a></li><li><a href="global.html#setToken">setToken</a></li><li><a href="global.html#setUser">setUser</a></li><li><a href="global.html#showSection">showSection</a></li><li><a href="global.html#signOut">signOut</a></li><li><a href="global.html#statusBadge">statusBadge</a></li><li><a href="global.html#submissionsData">submissionsData</a></li><li><a href="global.html#submitAssignments">submitAssignments</a></li><li><a href="global.html#submitBulkStatus">submitBulkStatus</a></li><li><a href="global.html#submitExport">submitExport</a></li><li><a href="global.html#submitReview">submitReview</a></li><li><a href="global.html#switchReviewTab">switchReviewTab</a></li><li><a href="global.html#updateStats">updateStats</a></li><li><a href="global.html#updateUserRole">updateUserRole</a></li><li><a href="global.html#userModel">userModel</a></li><li><a href="global.html#usersData">usersData</a></li><li><a href="global.html#workloadData">workloadData</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.5</a> on Fri May 01 2026 21:29:55 GMT-0500 (Central Daylight Time)
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>

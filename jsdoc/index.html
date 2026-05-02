@@ -1,0 +1,1274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Home</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Home</h1>
+
+    
+
+
+
+    
+
+
+    <h3> </h3>
+
+
+
+
+
+
+
+
+
+
+    
+
+
+
+
+
+
+
+
+
+
+
+
+<section>
+
+<header>
+    
+        <h2>js/admin.js</h2>
+        
+    
+</header>
+
+<article>
+    <div class="container-overview">
+    
+        
+            <div class="description">Admin Panel client for the KCR Submission Manager.Powers `html/admin.html`: lists submissions, manages users, assignsreviewers, performs bulk status changes, and exports data. All data callsgo through <a href="global.html#adminFetch">adminFetch</a> which prefixes endpoints with `/api/admin`and surfaces non-2xx responses inline via a `{ __error, message }` shape.Requires `js/app.js` to be loaded first (provides `getToken` and`window.apiFetch`).</div>
+        
+
+        
+
+
+<dl class="details">
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="js_admin.js.html">js/admin.js</a>, <a href="js_admin.js.html#line1">line 1</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+        
+    
+    </div>
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+</article>
+
+</section>
+
+
+
+
+
+
+
+<section>
+
+<header>
+    
+        <h2>js/reviews.js</h2>
+        
+    
+</header>
+
+<article>
+    <div class="container-overview">
+    
+        
+            <div class="description">Powers the review queue page (review-queue.html) and thereview rating widget on the submission detail page (submission-detail.html).Uses the shared apiFetch() and getUser() helpers from app.js.Page-specific code is guarded by container checks so it is safe toinclude on multiple pages.</div>
+        
+
+        
+
+
+<dl class="details">
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="js_reviews.js.html">js/reviews.js</a>, <a href="js_reviews.js.html#line1">line 1</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+        
+    
+    </div>
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+</article>
+
+</section>
+
+
+
+
+
+
+
+<section>
+
+<header>
+    
+        <h2>server/config/db.js</h2>
+        
+    
+</header>
+
+<article>
+    <div class="container-overview">
+    
+        
+            <div class="description">PostgreSQL connection pool and schema bootstrap.Exposes a shared `pg.Pool` connected to the Supabase-hosted Postgresinstance specified by `DATABASE_URL`, plus an `initializeDatabase()`helper that creates the application schema (tables + Row Level Security)if it does not already exist.The pool is intentionally a module-level singleton so every controller andmodel shares the same connection limits.</div>
+        
+
+        
+
+
+<dl class="details">
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="server_config_db.js.html">server/config/db.js</a>, <a href="server_config_db.js.html#line1">line 1</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+        
+    
+    </div>
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+</article>
+
+</section>
+
+
+
+
+
+
+
+<section>
+
+<header>
+    
+        <h2>server/config/db.js</h2>
+        
+    
+</header>
+
+<article>
+    <div class="container-overview">
+    
+        
+            <div class="description">PostgreSQL connection pool and schema bootstrap.Exposes a shared `pg.Pool` connected to the Supabase-hosted Postgresinstance specified by `DATABASE_URL`, plus an `initializeDatabase()`helper that creates the application schema (tables + Row Level Security)if it does not already exist.The pool is intentionally a module-level singleton so every controller andmodel shares the same connection limits.</div>
+        
+
+        
+
+
+<dl class="details">
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="server_config_db.js.html">server/config/db.js</a>, <a href="server_config_db.js.html#line1">line 1</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+        
+    
+    </div>
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+</article>
+
+</section>
+
+
+
+
+
+
+
+<section>
+
+<header>
+    
+        <h2>server/controllers/adminController.js</h2>
+        
+    
+</header>
+
+<article>
+    <div class="container-overview">
+    
+        
+            <div class="description">Admin controller — backs every endpoint mounted under `/api/admin`.Every handler in this file assumes the request has already passed through`authenticate` + `authorize('admin')` (see `server/routes/admin.js`), sowe do not re-check permissions here.Handlers are written in the standard Express `(req, res) => { ... }` styleand respond with JSON. On unexpected errors they log and return a generic`500 { error: 'Something went wrong' }`.</div>
+        
+
+        
+
+
+<dl class="details">
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="server_controllers_adminController.js.html">server/controllers/adminController.js</a>, <a href="server_controllers_adminController.js.html#line1">line 1</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+        
+    
+    </div>
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+</article>
+
+</section>
+
+
+
+
+
+
+
+<section>
+
+<header>
+    
+        <h2>server/controllers/adminController.js</h2>
+        
+    
+</header>
+
+<article>
+    <div class="container-overview">
+    
+        
+            <div class="description">Admin controller — backs every endpoint mounted under `/api/admin`.Every handler in this file assumes the request has already passed through`authenticate` + `authorize('admin')` (see `server/routes/admin.js`), sowe do not re-check permissions here.Handlers are written in the standard Express `(req, res) => { ... }` styleand respond with JSON. On unexpected errors they log and return a generic`500 { error: 'Something went wrong' }`.</div>
+        
+
+        
+
+
+<dl class="details">
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="server_controllers_adminController.js.html">server/controllers/adminController.js</a>, <a href="server_controllers_adminController.js.html#line1">line 1</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+        
+    
+    </div>
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+</article>
+
+</section>
+
+
+
+
+
+
+
+<section>
+
+<header>
+    
+        <h2>server/index.js</h2>
+        
+    
+</header>
+
+<article>
+    <div class="container-overview">
+    
+        
+            <div class="description">Server entry point for the KCR Submission Manager.Loads environment variables, creates the HTTP server around the Expressapp, attaches the Socket.IO instance for real-time messaging, runs databaseinitialization, then starts listening on `process.env.PORT` (default 3001).The Socket.IO `io` instance is stored on the Express app (`app.set('io', io)`)so controllers — particularly the message controller — can emit events toconnected clients without importing `./socket` directly.</div>
+        
+
+        
+
+
+<dl class="details">
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="server_index.js.html">server/index.js</a>, <a href="server_index.js.html#line1">line 1</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+        
+    
+    </div>
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+</article>
+
+</section>
+
+
+
+
+
+
+
+<section>
+
+<header>
+    
+        <h2>server/middleware/auth.js</h2>
+        
+    
+</header>
+
+<article>
+    <div class="container-overview">
+    
+        
+            <div class="description">JWT authentication helpers.Exports:  - `authenticate`  — Express middleware that verifies a Bearer token and                      attaches the decoded payload to `req.user`.  - `generateToken` — Issues a 24-hour token for a successfully                      authenticated user.  - `JWT_SECRET`    — The runtime secret (also imported by `socket.js` for                      Socket.IO handshake auth).Fails fast at startup if `JWT_SECRET` is missing in non-test environmentsto avoid signing tokens with a default, source-controlled value.</div>
+        
+
+        
+
+
+<dl class="details">
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="server_middleware_auth.js.html">server/middleware/auth.js</a>, <a href="server_middleware_auth.js.html#line1">line 1</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+        
+    
+    </div>
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+</article>
+
+</section>
+
+
+
+
+
+
+
+<section>
+
+<header>
+    
+        <h2>server/middleware/auth.js</h2>
+        
+    
+</header>
+
+<article>
+    <div class="container-overview">
+    
+        
+            <div class="description">JWT authentication helpers.Exports:  - `authenticate`  — Express middleware that verifies a Bearer token and                      attaches the decoded payload to `req.user`.  - `generateToken` — Issues a 24-hour token for a successfully                      authenticated user.  - `JWT_SECRET`    — The runtime secret (also imported by `socket.js` for                      Socket.IO handshake auth).Fails fast at startup if `JWT_SECRET` is missing in non-test environmentsto avoid signing tokens with a default, source-controlled value.</div>
+        
+
+        
+
+
+<dl class="details">
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="server_middleware_auth.js.html">server/middleware/auth.js</a>, <a href="server_middleware_auth.js.html#line1">line 1</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+        
+    
+    </div>
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+</article>
+
+</section>
+
+
+
+
+
+
+
+<section>
+
+<header>
+    
+        <h2>server/middleware/roles.js</h2>
+        
+    
+</header>
+
+<article>
+    <div class="container-overview">
+    
+        
+            <div class="description">Role-based access-control middleware.Pairs with `./auth` — `authenticate` must run first so that `req.user.role`is populated by the time <a href="global.html#authorize">authorize</a> compares it to the allow-list.</div>
+        
+
+        
+
+
+<dl class="details">
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="server_middleware_roles.js.html">server/middleware/roles.js</a>, <a href="server_middleware_roles.js.html#line1">line 1</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+        
+    
+    </div>
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+</article>
+
+</section>
+
+
+
+
+
+
+
+<section>
+
+<header>
+    
+        <h2>server/middleware/roles.js</h2>
+        
+    
+</header>
+
+<article>
+    <div class="container-overview">
+    
+        
+            <div class="description">Role-based access-control middleware.Pairs with `./auth` — `authenticate` must run first so that `req.user.role`is populated by the time <a href="global.html#authorize">authorize</a> compares it to the allow-list.</div>
+        
+
+        
+
+
+<dl class="details">
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="server_middleware_roles.js.html">server/middleware/roles.js</a>, <a href="server_middleware_roles.js.html#line1">line 1</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+        
+    
+    </div>
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+</article>
+
+</section>
+
+
+
+
+
+
+
+<section>
+
+<header>
+    
+        <h2>server/routes/admin.js</h2>
+        
+    
+</header>
+
+<article>
+    <div class="container-overview">
+    
+        
+            <div class="description">Admin route definitions — all endpoints mounted under `/api/admin`.Every route in this module is gated by two middlewares applied at therouter level:  1. `authenticate` — requires a valid JWT and sets `req.user`.  2. `authorize('admin')` — restricts access to users whose role is `admin`.Handlers live in `server/controllers/adminController.js`.Endpoint map:  - `GET    /users`                                  → list all users  - `PUT    /users/:id/role`                         → change a user's role  - `DELETE /users/:id`                              → delete a user  - `POST   /assign`                                 → assign a reviewer  - `DELETE /assign/:submissionId/:reviewerId`       → remove an assignment  - `GET    /workload`                               → reviewer workload stats  - `PUT    /submissions/bulk-status`                → bulk status update  - `GET    /export`                                 → full submissions export</div>
+        
+
+        
+
+
+<dl class="details">
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="server_routes_admin.js.html">server/routes/admin.js</a>, <a href="server_routes_admin.js.html#line1">line 1</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+        
+    
+    </div>
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+</article>
+
+</section>
+
+
+
+
+
+
+
+<section>
+
+<header>
+    
+        <h2>server/routes/admin.js</h2>
+        
+    
+</header>
+
+<article>
+    <div class="container-overview">
+    
+        
+            <div class="description">Admin route definitions — all endpoints mounted under `/api/admin`.Every route in this module is gated by two middlewares applied at therouter level:  1. `authenticate` — requires a valid JWT and sets `req.user`.  2. `authorize('admin')` — restricts access to users whose role is `admin`.Handlers live in `server/controllers/adminController.js`.Endpoint map:  - `GET    /users`                                  → list all users  - `PUT    /users/:id/role`                         → change a user's role  - `DELETE /users/:id`                              → delete a user  - `POST   /assign`                                 → assign a reviewer  - `DELETE /assign/:submissionId/:reviewerId`       → remove an assignment  - `GET    /workload`                               → reviewer workload stats  - `PUT    /submissions/bulk-status`                → bulk status update  - `GET    /export`                                 → full submissions export</div>
+        
+
+        
+
+
+<dl class="details">
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="server_routes_admin.js.html">server/routes/admin.js</a>, <a href="server_routes_admin.js.html#line1">line 1</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+        
+    
+    </div>
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+</article>
+
+</section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Global</h3><ul><li><a href="global.html#AVATAR_COLORS">AVATAR_COLORS</a></li><li><a href="global.html#Base">Base</a></li><li><a href="global.html#Palette">Palette</a></li><li><a href="global.html#Port">Port</a></li><li><a href="global.html#Runtime">Runtime</a></li><li><a href="global.html#UPLOAD_DIR">UPLOAD_DIR</a></li><li><a href="global.html#adminFetch">adminFetch</a></li><li><a href="global.html#apiFetch">apiFetch</a></li><li><a href="global.html#assignReviewer">assignReviewer</a></li><li><a href="global.html#assignTargetSubmissionId">assignTargetSubmissionId</a></li><li><a href="global.html#authenticate">authenticate</a></li><li><a href="global.html#authorize">authorize</a></li><li><a href="global.html#avatarColor">avatarColor</a></li><li><a href="global.html#bulkUpdateStatus">bulkUpdateStatus</a></li><li><a href="global.html#canAccessSubmission">canAccessSubmission</a></li><li><a href="global.html#canDiscussSubmission">canDiscussSubmission</a></li><li><a href="global.html#confirmDeleteSubmission">confirmDeleteSubmission</a></li><li><a href="global.html#confirmDeleteUser">confirmDeleteUser</a></li><li><a href="global.html#currentReview">currentReview</a></li><li><a href="global.html#deleteUser">deleteUser</a></li><li><a href="global.html#displayUserName">displayUserName</a></li><li><a href="global.html#displayUserRole">displayUserRole</a></li><li><a href="global.html#escapeAttr">escapeAttr</a></li><li><a href="global.html#escapeHtml">escapeHtml</a></li><li><a href="global.html#exportData">exportData</a></li><li><a href="global.html#filterReviewCards">filterReviewCards</a></li><li><a href="global.html#filterSubmissions">filterSubmissions</a></li><li><a href="global.html#formatDate">formatDate</a></li><li><a href="global.html#generateToken">generateToken</a></li><li><a href="global.html#getAllUsers">getAllUsers</a></li><li><a href="global.html#getInitials">getInitials</a></li><li><a href="global.html#getQueryId">getQueryId</a></li><li><a href="global.html#getReviewerWorkload">getReviewerWorkload</a></li><li><a href="global.html#getToken">getToken</a></li><li><a href="global.html#getUser">getUser</a></li><li><a href="global.html#initReviewQueue">initReviewQueue</a></li><li><a href="global.html#initReviewWidget">initReviewWidget</a></li><li><a href="global.html#initializeDatabase">initializeDatabase</a></li><li><a href="global.html#loadAssignments">loadAssignments</a></li><li><a href="global.html#loadExistingReview">loadExistingReview</a></li><li><a href="global.html#loadReviewerFeedback">loadReviewerFeedback</a></li><li><a href="global.html#loadSubmissions">loadSubmissions</a></li><li><a href="global.html#loadUsers">loadUsers</a></li><li><a href="global.html#loadWorkload">loadWorkload</a></li><li><a href="global.html#login">login</a></li><li><a href="global.html#me">me</a></li><li><a href="global.html#myAssignments">myAssignments</a></li><li><a href="global.html#openAssignModal">openAssignModal</a></li><li><a href="global.html#openBulkStatusModal">openBulkStatusModal</a></li><li><a href="global.html#openEditRoleModal">openEditRoleModal</a></li><li><a href="global.html#pool">pool</a></li><li><a href="global.html#populateSidebar">populateSidebar</a></li><li><a href="global.html#register">register</a></li><li><a href="global.html#removeAssignment">removeAssignment</a></li><li><a href="global.html#renderNavigationByRole">renderNavigationByRole</a></li><li><a href="global.html#renderReviewCards">renderReviewCards</a></li><li><a href="global.html#renderReviewStats">renderReviewStats</a></li><li><a href="global.html#renderStars">renderStars</a></li><li><a href="global.html#renderSubmissions">renderSubmissions</a></li><li><a href="global.html#renderUsers">renderUsers</a></li><li><a href="global.html#renderWorkload">renderWorkload</a></li><li><a href="global.html#requireAuth">requireAuth</a></li><li><a href="global.html#roleBadgeClass">roleBadgeClass</a></li><li><a href="global.html#saveUserRole">saveUserRole</a></li><li><a href="global.html#setStarRating">setStarRating</a></li><li><a href="global.html#setToken">setToken</a></li><li><a href="global.html#setUser">setUser</a></li><li><a href="global.html#showSection">showSection</a></li><li><a href="global.html#signOut">signOut</a></li><li><a href="global.html#statusBadge">statusBadge</a></li><li><a href="global.html#submissionsData">submissionsData</a></li><li><a href="global.html#submitAssignments">submitAssignments</a></li><li><a href="global.html#submitBulkStatus">submitBulkStatus</a></li><li><a href="global.html#submitExport">submitExport</a></li><li><a href="global.html#submitReview">submitReview</a></li><li><a href="global.html#switchReviewTab">switchReviewTab</a></li><li><a href="global.html#updateStats">updateStats</a></li><li><a href="global.html#updateUserRole">updateUserRole</a></li><li><a href="global.html#userModel">userModel</a></li><li><a href="global.html#usersData">usersData</a></li><li><a href="global.html#workloadData">workloadData</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.5</a> on Fri May 01 2026 21:29:55 GMT-0500 (Central Daylight Time)
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>

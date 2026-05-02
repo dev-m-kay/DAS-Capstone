@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Source: js/app.js</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Source: js/app.js</h1>
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>/* ============================================
+   KCR Submission Manager — Shared JavaScript
+   ============================================ */
+
+
+
+/**
+ * gets the users authentication token from local storage
+ *
+ * @returns {*} authToken 
+ */
+function getToken() {
+  return localStorage.getItem('authToken');
+}
+
+
+/**
+ * Sets authentication token to local storage
+ *
+ * @param {*} token 
+ */
+function setToken(token) {
+  if (token) {
+    localStorage.setItem('authToken', token);
+  } else {
+    localStorage.removeItem('authToken');
+  }
+}
+
+
+/**
+ * Gets user object from local storage
+ *
+ * @returns {*} 
+ */
+function getUser(){
+  const userStr = localStorage.getItem('user');
+  if(userStr) {
+    try{
+      return JSON.parse(userStr);
+    } catch (e) {
+      return null;
+    }
+  }
+  return null;
+}
+
+
+/**
+ * Sets user to local storage
+ *
+ * @param {*} user 
+ */
+function setUser (user){
+  if (user){
+    localStorage.setItem('user', JSON.stringify(user));
+  } else{
+    localStorage.removeItem('user');
+  }
+}
+
+
+/** Signs user out, removing authtoken and user data from local storage */
+function signOut(){
+  console.log('Signing out...');
+  localStorage.removeItem('authToken');
+  localStorage.removeItem('user');
+  window.location.href = 'index.html';
+}
+
+
+
+/**
+ * Wrapper for fetch API, adds auth headers and handles 401 errors
+ *
+ * @async
+ * @param {*} url Endpoint to call
+ * @param {{}} [options={}] Standard fetch options
+ * @returns {unknown} response object
+ */
+async function apiFetch(url, options = {}){
+  const token = getToken();
+  const headers = {
+    'Content-Type' : 'application/json',
+    ...options.headers
+  };
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+  const config = {
+    ...options,
+    headers
+  };
+
+  try{
+    const response = await fetch(url, config);
+
+    if (response.status === 401) {
+      const path = window.location.pathname;
+      if (!path.endsWith('/index.html') &amp;&amp; !path.endsWith('/register.html')) {
+        signOut();
+      }
+      throw new Error('Unauthorized');
+    }
+    return response;
+  } catch (error) {
+    console.error('API fetch error:', error);
+    throw error;
+  }
+}
+
+
+/**
+ * Validates User authentication and validates token with server.
+ *
+ * @async
+ * @returns {unknown} User data if authenticated, otherwise returns null.
+ */
+async function requireAuth(){
+  const token = getToken();
+
+  const publicPages = ['/index.html', '/register.html', '/', '/index', '/register'];
+  const currentPage = window.location.pathname;
+
+  console.log('requireAuth - Current page:', currentPage);
+  console.log('requireAuth - Has token:', !!token);
+
+  if (publicPages.includes(currentPage)){
+    console.log('Public page, no auth required');
+    return null;
+  }
+
+  if(!token){
+    console.log('No token found, redirecting to login');
+    window.location.href = '/index.html'
+    return null;
+  }
+
+  try{
+    console.log('Verifying token with server...');
+    const response = await fetch('/api/auth/me',{
+      method: 'GET',
+      headers:{
+        'Authorization': `Bearer ${token}`
+      }
+    });
+    if (response.ok){
+      const userData = await response.json();
+      console.log('Token valid, user:', userData);
+      setUser(userData);
+      return userData;
+    } else{
+      console.log('Token invalid, redirecting to login');
+      setToken(null);
+      setUser(null);
+      window.location.href = '/index.html';
+      return null;
+    }
+
+  } catch (error){
+    console.error('Auth verification failed:' ,error);
+    window.location.href = '/index.html';
+    return null;
+  }
+}
+
+/**
+ *Display User's full name in UI elements with class "user-name"
+ *
+ * @param {*} user user object containing first_name, last_name, and email
+ * @return {*} return if no user object
+ */
+function displayUserName(user){
+  if (!user) return;
+
+  const fullName = `${user.first_name || ''} ${user.last_name || ''}`.trim();
+  const displayName = fullName || user.email || 'user';
+
+  const userNameElements = document.querySelectorAll('.user-name');
+  userNameElements.forEach(el =>{
+    el.textContent = displayName;
+  });
+
+  const sidebarName = document.querySelector('.sidebar-footer .name');
+  if(sidebarName){
+    sidebarName.textContent = displayName;
+  }
+
+  const userAvatar = document.querySelector('.avatar');
+  if (userAvatar &amp;&amp; user.first_name){
+    userAvatar.textContent = user.first_name.charAt(0).toUpperCase();
+  }
+}
+
+/**
+ *Show user's role in elements with class "user-role"
+ *
+ * @param {*} user User object with role property
+ * @return {*} 
+ */
+function displayUserRole(user){
+  if (!user || !user.role) return;
+
+  const roleDisplay = user.role.charAt(0).toUpperCase() + user.role.slice(1);
+
+  const userRoleElements = document.querySelectorAll('.user-role');
+  userRoleElements.forEach(el => {
+    el.textContent = roleDisplay;
+  });
+
+  const sidebarRole = document.querySelector('.sidebar-footer .role');
+  if(sidebarRole){
+    sidebarRole.textContent = roleDisplay;
+  }
+}
+
+
+/**
+ * Build dynamic navigation based on user's role
+ *
+ * @param {*} role User's role
+ * @param {string} [containerId='sidebarNav'] HTML element where navigation will be inserted
+ */
+function renderNavigationByRole(role, containerId = 'sidebarNav'){
+  const navContainer = document.getElementById(containerId);
+  if(!navContainer) return;
+
+  let navSections = [];
+
+  const mainSection = {
+    section: "Main",
+    links:[
+      {href: "dashboard.html", text: "Dashboard"},
+      {href: "submissions.html", text: "My Submissions"},
+      {href: "submit.html", text: "New Submission"}
+    ]
+  };
+  navSections.push(mainSection);
+      
+  // Review section - ONLY for reviewers, editors, and admins
+  const reviewSection = {
+    section: "Review",
+      links: [
+        { href: "review-queue.html", text: "Review Queue" },
+        { href: "messages.html", text: "Messages" }
+    ]
+  };
+    
+    // Admin section - ONLY for admins
+  const adminSection = {
+    section: "Administration",
+    links: [
+      { href: "admin.html", text: "Admin Panel" }
+    ]
+  };
+    
+    // Conditionally add sections based on role
+  if (role === 'reviewer' || role === 'editor' || role === 'admin') {
+    navSections.push(reviewSection);
+  }
+    
+  if (role === 'admin') {
+    navSections.push(adminSection);
+  }
+
+  const currentPage = window.location.pathname.split('/').pop() || 'dashboard.html';
+  
+  let html = '';
+    for (const section of navSections) {
+      html += `&lt;div class="nav-section">${section.section}&lt;/div>`;
+      for (const link of section.links) {
+        const activeClass = link.href === currentPage ? 'active' : '';
+        html += `&lt;a href="${link.href}" class="${activeClass}">${link.text}&lt;/a>`;
+      }
+    }
+    
+    navContainer.innerHTML = html;
+
+
+}
+
+
+/**
+ * Complete Sidebar initialization
+ *
+ * @param {*} user User object with name, role, etc.
+ */
+function populateSidebar(user){
+  if (!user) return;
+
+  displayUserName(user);
+  displayUserRole(user);
+
+  renderNavigationByRole(user.role, 'sidebarNav');
+}
+
+//Make functions global
+window.signOut = signOut;
+window.getToken = getToken;
+window.setToken = setToken;
+window.getUser = getUser;
+window.setUser = setUser;
+window.apiFetch = apiFetch;
+window.requireAuth = requireAuth;
+window.renderNavigationByRole = renderNavigationByRole;
+window.populateSidebar = populateSidebar;
+window.displayUserName = displayUserName;
+window.displayUserRole = displayUserRole;
+
+
+document.addEventListener('DOMContentLoaded', async () => {
+
+  console.log('DOMContentLoaded - Initializing app...');
+
+  const user = await requireAuth();
+  if(user){
+    populateSidebar(user);
+  }
+
+  // --- Mobile sidebar toggle (CSP-friendly: no inline onclick) ---
+  const sidebar = document.getElementById('sidebar');
+  document.querySelectorAll('.hamburger').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (sidebar) sidebar.classList.toggle('open');
+    });
+  });
+  if (sidebar) {
+    document.addEventListener('click', (e) => {
+      const hamburger = e.target.closest('.hamburger');
+      if (
+        sidebar.classList.contains('open') &amp;&amp;
+        !sidebar.contains(e.target) &amp;&amp;
+        !hamburger
+      ) {
+        sidebar.classList.remove('open');
+      }
+    });
+  }
+
+  // --- Generic Sign Out wiring (any element with [data-action="signout"]) ---
+  document.querySelectorAll('[data-action="signout"]').forEach(el => {
+    el.addEventListener('click', (e) => {
+      e.preventDefault();
+      signOut();
+    });
+  });
+
+  // --- Generic modal-close wiring (any element with [data-action="close-modal"]) ---
+  document.querySelectorAll('[data-action="close-modal"]').forEach(el => {
+    el.addEventListener('click', (e) => {
+      e.preventDefault();
+      const overlay = el.closest('.modal-overlay');
+      if (overlay) overlay.classList.remove('show');
+    });
+  });
+
+  // --- Active nav highlighting ---
+  const currentPage = window.location.pathname.split('/').pop() || 'index.html';
+  document.querySelectorAll('.sidebar-nav a').forEach(link => {
+    const href = link.getAttribute('href');
+    if (href === currentPage) {
+      link.classList.add('active');
+    } else if (link.classList.contains('active') &amp;&amp; href !== currentPage) {
+      link.classList.remove('active');
+    }
+  });
+
+  // --- Search filter (client-side demo) ---
+  document.querySelectorAll('.search-input input').forEach(input => {
+    input.addEventListener('input', () => {
+      const query = input.value.toLowerCase();
+      const table = input.closest('.page-content')?.querySelector('tbody');
+      if (!table) return;
+      table.querySelectorAll('tr').forEach(row => {
+        const text = row.textContent.toLowerCase();
+        row.style.display = text.includes(query) ? '' : 'none';
+      });
+    });
+  });
+
+  // --- Filter selects (demo: show alert with selection) ---
+  document.querySelectorAll('.filter-select').forEach(select => {
+    select.addEventListener('change', () => {
+      // In a real app this would filter the data
+      console.log('Filter changed:', select.value);
+    });
+  });
+
+  // --- "Select all" checkbox in admin tables ---
+  document.querySelectorAll('thead input[type="checkbox"]').forEach(selectAll => {
+    selectAll.addEventListener('change', () => {
+      const tbody = selectAll.closest('table').querySelector('tbody');
+      tbody.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+        cb.checked = selectAll.checked;
+      });
+    });
+  });
+
+  // --- Close modals on overlay click ---
+  document.querySelectorAll('.modal-overlay').forEach(overlay => {
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) {
+        overlay.classList.remove('show');
+      }
+    });
+  });
+
+  // --- Close modals on Escape key ---
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      document.querySelectorAll('.modal-overlay.show').forEach(m => m.classList.remove('show'));
+    }
+  });
+
+  // --- Notification bell click (demo) ---
+  const bell = document.querySelector('.notification-bell .btn-icon');
+  if (bell) {
+    bell.addEventListener('click', () => {
+      alert('Notifications panel would open here.');
+    });
+  }
+  console.log('App initialization complete');
+});
+</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Global</h3><ul><li><a href="global.html#AVATAR_COLORS">AVATAR_COLORS</a></li><li><a href="global.html#Base">Base</a></li><li><a href="global.html#Palette">Palette</a></li><li><a href="global.html#Port">Port</a></li><li><a href="global.html#Runtime">Runtime</a></li><li><a href="global.html#UPLOAD_DIR">UPLOAD_DIR</a></li><li><a href="global.html#adminFetch">adminFetch</a></li><li><a href="global.html#apiFetch">apiFetch</a></li><li><a href="global.html#assignReviewer">assignReviewer</a></li><li><a href="global.html#assignTargetSubmissionId">assignTargetSubmissionId</a></li><li><a href="global.html#authenticate">authenticate</a></li><li><a href="global.html#authorize">authorize</a></li><li><a href="global.html#avatarColor">avatarColor</a></li><li><a href="global.html#bulkUpdateStatus">bulkUpdateStatus</a></li><li><a href="global.html#canAccessSubmission">canAccessSubmission</a></li><li><a href="global.html#canDiscussSubmission">canDiscussSubmission</a></li><li><a href="global.html#confirmDeleteSubmission">confirmDeleteSubmission</a></li><li><a href="global.html#confirmDeleteUser">confirmDeleteUser</a></li><li><a href="global.html#currentReview">currentReview</a></li><li><a href="global.html#deleteUser">deleteUser</a></li><li><a href="global.html#displayUserName">displayUserName</a></li><li><a href="global.html#displayUserRole">displayUserRole</a></li><li><a href="global.html#escapeAttr">escapeAttr</a></li><li><a href="global.html#escapeHtml">escapeHtml</a></li><li><a href="global.html#exportData">exportData</a></li><li><a href="global.html#filterReviewCards">filterReviewCards</a></li><li><a href="global.html#filterSubmissions">filterSubmissions</a></li><li><a href="global.html#formatDate">formatDate</a></li><li><a href="global.html#generateToken">generateToken</a></li><li><a href="global.html#getAllUsers">getAllUsers</a></li><li><a href="global.html#getInitials">getInitials</a></li><li><a href="global.html#getQueryId">getQueryId</a></li><li><a href="global.html#getReviewerWorkload">getReviewerWorkload</a></li><li><a href="global.html#getToken">getToken</a></li><li><a href="global.html#getUser">getUser</a></li><li><a href="global.html#initReviewQueue">initReviewQueue</a></li><li><a href="global.html#initReviewWidget">initReviewWidget</a></li><li><a href="global.html#initializeDatabase">initializeDatabase</a></li><li><a href="global.html#loadAssignments">loadAssignments</a></li><li><a href="global.html#loadExistingReview">loadExistingReview</a></li><li><a href="global.html#loadReviewerFeedback">loadReviewerFeedback</a></li><li><a href="global.html#loadSubmissions">loadSubmissions</a></li><li><a href="global.html#loadUsers">loadUsers</a></li><li><a href="global.html#loadWorkload">loadWorkload</a></li><li><a href="global.html#login">login</a></li><li><a href="global.html#me">me</a></li><li><a href="global.html#myAssignments">myAssignments</a></li><li><a href="global.html#openAssignModal">openAssignModal</a></li><li><a href="global.html#openBulkStatusModal">openBulkStatusModal</a></li><li><a href="global.html#openEditRoleModal">openEditRoleModal</a></li><li><a href="global.html#pool">pool</a></li><li><a href="global.html#populateSidebar">populateSidebar</a></li><li><a href="global.html#register">register</a></li><li><a href="global.html#removeAssignment">removeAssignment</a></li><li><a href="global.html#renderNavigationByRole">renderNavigationByRole</a></li><li><a href="global.html#renderReviewCards">renderReviewCards</a></li><li><a href="global.html#renderReviewStats">renderReviewStats</a></li><li><a href="global.html#renderStars">renderStars</a></li><li><a href="global.html#renderSubmissions">renderSubmissions</a></li><li><a href="global.html#renderUsers">renderUsers</a></li><li><a href="global.html#renderWorkload">renderWorkload</a></li><li><a href="global.html#requireAuth">requireAuth</a></li><li><a href="global.html#roleBadgeClass">roleBadgeClass</a></li><li><a href="global.html#saveUserRole">saveUserRole</a></li><li><a href="global.html#setStarRating">setStarRating</a></li><li><a href="global.html#setToken">setToken</a></li><li><a href="global.html#setUser">setUser</a></li><li><a href="global.html#showSection">showSection</a></li><li><a href="global.html#signOut">signOut</a></li><li><a href="global.html#statusBadge">statusBadge</a></li><li><a href="global.html#submissionsData">submissionsData</a></li><li><a href="global.html#submitAssignments">submitAssignments</a></li><li><a href="global.html#submitBulkStatus">submitBulkStatus</a></li><li><a href="global.html#submitExport">submitExport</a></li><li><a href="global.html#submitReview">submitReview</a></li><li><a href="global.html#switchReviewTab">switchReviewTab</a></li><li><a href="global.html#updateStats">updateStats</a></li><li><a href="global.html#updateUserRole">updateUserRole</a></li><li><a href="global.html#userModel">userModel</a></li><li><a href="global.html#usersData">usersData</a></li><li><a href="global.html#workloadData">workloadData</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.5</a> on Fri May 01 2026 21:29:55 GMT-0500 (Central Daylight Time)
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>

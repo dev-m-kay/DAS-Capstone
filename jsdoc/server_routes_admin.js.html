@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Source: server/routes/admin.js</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Source: server/routes/admin.js</h1>
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>/**
+ * @file Admin route definitions — all endpoints mounted under `/api/admin`.
+ *
+ * Every route in this module is gated by two middlewares applied at the
+ * router level:
+ *   1. `authenticate` — requires a valid JWT and sets `req.user`.
+ *   2. `authorize('admin')` — restricts access to users whose role is `admin`.
+ *
+ * Handlers live in `server/controllers/adminController.js`.
+ *
+ * Endpoint map:
+ *   - `GET    /users`                                  → list all users
+ *   - `PUT    /users/:id/role`                         → change a user's role
+ *   - `DELETE /users/:id`                              → delete a user
+ *   - `POST   /assign`                                 → assign a reviewer
+ *   - `DELETE /assign/:submissionId/:reviewerId`       → remove an assignment
+ *   - `GET    /workload`                               → reviewer workload stats
+ *   - `PUT    /submissions/bulk-status`                → bulk status update
+ *   - `GET    /export`                                 → full submissions export
+ */
+
+const router = require('express').Router();
+const ctrl = require('../controllers/adminController');
+const { authenticate } = require('../middleware/auth');
+const { authorize } = require('../middleware/roles');
+
+router.use(authenticate);
+router.use(authorize('admin'));
+
+router.get('/users',                                    ctrl.getAllUsers);
+router.put('/users/:id/role',                           ctrl.updateUserRole);
+router.delete('/users/:id',                             ctrl.deleteUser);
+
+router.post('/assign',                                  ctrl.assignReviewer);
+router.delete('/assign/:submissionId/:reviewerId',      ctrl.removeAssignment);
+router.get('/workload',                                 ctrl.getReviewerWorkload);
+
+router.put('/submissions/bulk-status',                  ctrl.bulkUpdateStatus);
+router.get('/export',                                   ctrl.exportData);
+
+module.exports = router;
+</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Global</h3><ul><li><a href="global.html#AVATAR_COLORS">AVATAR_COLORS</a></li><li><a href="global.html#Base">Base</a></li><li><a href="global.html#Palette">Palette</a></li><li><a href="global.html#Port">Port</a></li><li><a href="global.html#Runtime">Runtime</a></li><li><a href="global.html#UPLOAD_DIR">UPLOAD_DIR</a></li><li><a href="global.html#adminFetch">adminFetch</a></li><li><a href="global.html#apiFetch">apiFetch</a></li><li><a href="global.html#assignReviewer">assignReviewer</a></li><li><a href="global.html#assignTargetSubmissionId">assignTargetSubmissionId</a></li><li><a href="global.html#authenticate">authenticate</a></li><li><a href="global.html#authorize">authorize</a></li><li><a href="global.html#avatarColor">avatarColor</a></li><li><a href="global.html#bulkUpdateStatus">bulkUpdateStatus</a></li><li><a href="global.html#canAccessSubmission">canAccessSubmission</a></li><li><a href="global.html#canDiscussSubmission">canDiscussSubmission</a></li><li><a href="global.html#confirmDeleteSubmission">confirmDeleteSubmission</a></li><li><a href="global.html#confirmDeleteUser">confirmDeleteUser</a></li><li><a href="global.html#currentReview">currentReview</a></li><li><a href="global.html#deleteUser">deleteUser</a></li><li><a href="global.html#displayUserName">displayUserName</a></li><li><a href="global.html#displayUserRole">displayUserRole</a></li><li><a href="global.html#escapeAttr">escapeAttr</a></li><li><a href="global.html#escapeHtml">escapeHtml</a></li><li><a href="global.html#exportData">exportData</a></li><li><a href="global.html#filterReviewCards">filterReviewCards</a></li><li><a href="global.html#filterSubmissions">filterSubmissions</a></li><li><a href="global.html#formatDate">formatDate</a></li><li><a href="global.html#generateToken">generateToken</a></li><li><a href="global.html#getAllUsers">getAllUsers</a></li><li><a href="global.html#getInitials">getInitials</a></li><li><a href="global.html#getQueryId">getQueryId</a></li><li><a href="global.html#getReviewerWorkload">getReviewerWorkload</a></li><li><a href="global.html#getToken">getToken</a></li><li><a href="global.html#getUser">getUser</a></li><li><a href="global.html#initReviewQueue">initReviewQueue</a></li><li><a href="global.html#initReviewWidget">initReviewWidget</a></li><li><a href="global.html#initializeDatabase">initializeDatabase</a></li><li><a href="global.html#loadAssignments">loadAssignments</a></li><li><a href="global.html#loadExistingReview">loadExistingReview</a></li><li><a href="global.html#loadReviewerFeedback">loadReviewerFeedback</a></li><li><a href="global.html#loadSubmissions">loadSubmissions</a></li><li><a href="global.html#loadUsers">loadUsers</a></li><li><a href="global.html#loadWorkload">loadWorkload</a></li><li><a href="global.html#login">login</a></li><li><a href="global.html#me">me</a></li><li><a href="global.html#myAssignments">myAssignments</a></li><li><a href="global.html#openAssignModal">openAssignModal</a></li><li><a href="global.html#openBulkStatusModal">openBulkStatusModal</a></li><li><a href="global.html#openEditRoleModal">openEditRoleModal</a></li><li><a href="global.html#pool">pool</a></li><li><a href="global.html#populateSidebar">populateSidebar</a></li><li><a href="global.html#register">register</a></li><li><a href="global.html#removeAssignment">removeAssignment</a></li><li><a href="global.html#renderNavigationByRole">renderNavigationByRole</a></li><li><a href="global.html#renderReviewCards">renderReviewCards</a></li><li><a href="global.html#renderReviewStats">renderReviewStats</a></li><li><a href="global.html#renderStars">renderStars</a></li><li><a href="global.html#renderSubmissions">renderSubmissions</a></li><li><a href="global.html#renderUsers">renderUsers</a></li><li><a href="global.html#renderWorkload">renderWorkload</a></li><li><a href="global.html#requireAuth">requireAuth</a></li><li><a href="global.html#roleBadgeClass">roleBadgeClass</a></li><li><a href="global.html#saveUserRole">saveUserRole</a></li><li><a href="global.html#setStarRating">setStarRating</a></li><li><a href="global.html#setToken">setToken</a></li><li><a href="global.html#setUser">setUser</a></li><li><a href="global.html#showSection">showSection</a></li><li><a href="global.html#signOut">signOut</a></li><li><a href="global.html#statusBadge">statusBadge</a></li><li><a href="global.html#submissionsData">submissionsData</a></li><li><a href="global.html#submitAssignments">submitAssignments</a></li><li><a href="global.html#submitBulkStatus">submitBulkStatus</a></li><li><a href="global.html#submitExport">submitExport</a></li><li><a href="global.html#submitReview">submitReview</a></li><li><a href="global.html#switchReviewTab">switchReviewTab</a></li><li><a href="global.html#updateStats">updateStats</a></li><li><a href="global.html#updateUserRole">updateUserRole</a></li><li><a href="global.html#userModel">userModel</a></li><li><a href="global.html#usersData">usersData</a></li><li><a href="global.html#workloadData">workloadData</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.5</a> on Fri May 01 2026 21:29:55 GMT-0500 (Central Daylight Time)
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>

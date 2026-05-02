@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Source: server/models/User.js</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Source: server/models/User.js</h1>
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>const { pool } = require('../config/db');
+
+
+/**
+ * Description placeholder
+ *
+ * @type {{ create({ first_name, last_name, email, password_hash, bio, role }: { first_name: any; last_name: any; email: any; password_hash: any; bio?: string; role?: string; }): unknown; findByEmail(email: any): unknown; findById(id: any): unknown; findAll(): unknown; updateRole(id: any, role: any): unknown; deleteById(id: a...}
+/** @type {*} */
+const userModel = {
+    
+    
+    /**
+     * Creates a new user in the database
+     *
+     * @async
+     * @param {Object} param0 User data Object 
+     * @param {*} param0.first_name User's first name
+     * @param {*} param0.last_name  User's last name
+     * @param {*} param0.email User's email
+     * @param {*} param0.password_hash Hashed Password
+     * @param {string} [param0.bio=''] User's Biography (optional)
+     * @param {string} [param0.role='submitter'] User's role (optional)
+     * @returns {Promise&lt;Object>} Created user object 
+     */
+    async create({first_name, last_name, email, password_hash, bio='', role='submitter'}) {
+        const { rows } = await pool.query(
+            'INSERT INTO users (first_name, last_name, email, password_hash, bio, role) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
+            [first_name, last_name, email, password_hash, bio, role]
+        );
+        return rows[0];
+    },
+
+    
+    /**
+     * Finds a user by their email address
+     *
+     * @async
+     * @param {*} email  User's email address
+     * @returns {unknown} User object if found, otherwise undefined
+     */
+    async findByEmail(email) {
+        const {rows} = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
+        return rows[0];
+    },
+
+    
+    /**
+     * Finds a user by their ID
+     *
+     * @async
+     * @param {*} id User's unique identifier
+     * @returns {unknown} User object if found, otherwise undefined
+     */
+    async findById(id){
+        const {rows} = await pool.query('SELECT * FROM users WHERE id = $1', [id]);
+        return rows[0];
+    },
+
+    
+    /**
+     * Retrieves all users from database
+     *
+     * @async
+     * @returns {unknown} Array of user objects (exluding password_hash)
+     */
+    async findAll(){
+        const {rows} = await pool.query('SELECT id, first_name, last_name, email, bio, role, created_at FROM users ORDER BY created_at DESC');
+        return rows;
+    },
+
+    
+    /**
+     * Updates a user's role
+     *
+     * @async
+     * @param {*} id User's unique identifier
+     * @param {*} role New role for the user
+     * @returns {unknown} Updated user object
+     */
+    async updateRole(id, role){
+        const {rows} = await pool.query('UPDATE users SET role = $1 WHERE id = $2 RETURNING *',
+            [role, id]
+        );
+
+        return rows[0];
+    },
+
+
+    
+    /**
+     * Deletes a user by their id, cascading through every row that references
+     * them so the parent `users` row can actually be removed.
+     *
+     * The schema only declares `ON DELETE CASCADE` for rows whose parent is a
+     * submission (submission_files, reviews-on-submission, messages-on-submission,
+     * assignments-on-submission). Rows where the user is the *actor* — reviews
+     * they wrote, assignments where they are the reviewer, messages they sent —
+     * have no cascade, so a plain `DELETE FROM users` raises a 23503 foreign-key
+     * violation as soon as the user has any history. We clean those up
+     * explicitly inside a single transaction so the operation is all-or-nothing.
+     *
+     * The caller is responsible for unlinking any disk-resident upload files
+     * for submissions belonging to this user (see {@link findSubmissionFilesForUser}).
+     *
+     * @async
+     * @param {number|string} id  User id to remove.
+     * @returns {Promise&lt;number>} `rowCount` for the user delete (`1` on success, `0` if not found).
+     */
+    async deleteById(id){
+        const client = await pool.connect();
+        try {
+            await client.query('BEGIN');
+            // 1. Rows where the user is the actor — no cascade in schema.
+            await client.query('DELETE FROM reviews     WHERE reviewer_id = $1', [id]);
+            await client.query('DELETE FROM assignments WHERE reviewer_id = $1', [id]);
+            await client.query('DELETE FROM messages    WHERE sender_id   = $1', [id]);
+            // 2. Submissions owned by the user. The submission_files / reviews /
+            //    messages / assignments tied to *those* submissions are removed
+            //    automatically by the schema's ON DELETE CASCADE.
+            await client.query('DELETE FROM submissions WHERE user_id     = $1', [id]);
+            // 3. Finally the user themselves.
+            const { rowCount } = await client.query('DELETE FROM users WHERE id = $1', [id]);
+            await client.query('COMMIT');
+            return rowCount;
+        } catch (err) {
+            await client.query('ROLLBACK');
+            throw err;
+        } finally {
+            client.release();
+        }
+    },
+
+    /**
+     * Returns the on-disk filename of every upload tied to any submission
+     * authored by the given user. The caller can use these to best-effort
+     * delete the files from `/uploads` once the DB rows are gone.
+     *
+     * @async
+     * @param {number|string} userId
+     * @returns {Promise&lt;string[]>} Array of `submission_files.filename` values.
+     */
+    async findSubmissionFilesForUser(userId){
+        const { rows } = await pool.query(
+            `SELECT sf.filename
+             FROM submission_files sf
+             JOIN submissions s ON s.id = sf.submission_id
+             WHERE s.user_id = $1`,
+            [userId]
+        );
+        return rows.map(r => r.filename);
+    },
+
+
+    
+    /**
+     * Finds all users with a specific role
+     *
+     * @async
+     * @param {*} role User role to filter by
+     * @returns {unknown} Array of user objects with a specific role
+     */
+    async findByRole(role){
+        const {rows} = await pool.query('SELECT * FROM users WHERE role = $1', [role]);
+        return rows;
+    }
+};
+
+module.exports = userModel;</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Global</h3><ul><li><a href="global.html#AVATAR_COLORS">AVATAR_COLORS</a></li><li><a href="global.html#Base">Base</a></li><li><a href="global.html#Palette">Palette</a></li><li><a href="global.html#Port">Port</a></li><li><a href="global.html#Runtime">Runtime</a></li><li><a href="global.html#UPLOAD_DIR">UPLOAD_DIR</a></li><li><a href="global.html#adminFetch">adminFetch</a></li><li><a href="global.html#apiFetch">apiFetch</a></li><li><a href="global.html#assignReviewer">assignReviewer</a></li><li><a href="global.html#assignTargetSubmissionId">assignTargetSubmissionId</a></li><li><a href="global.html#authenticate">authenticate</a></li><li><a href="global.html#authorize">authorize</a></li><li><a href="global.html#avatarColor">avatarColor</a></li><li><a href="global.html#bulkUpdateStatus">bulkUpdateStatus</a></li><li><a href="global.html#canAccessSubmission">canAccessSubmission</a></li><li><a href="global.html#canDiscussSubmission">canDiscussSubmission</a></li><li><a href="global.html#confirmDeleteSubmission">confirmDeleteSubmission</a></li><li><a href="global.html#confirmDeleteUser">confirmDeleteUser</a></li><li><a href="global.html#currentReview">currentReview</a></li><li><a href="global.html#deleteUser">deleteUser</a></li><li><a href="global.html#displayUserName">displayUserName</a></li><li><a href="global.html#displayUserRole">displayUserRole</a></li><li><a href="global.html#escapeAttr">escapeAttr</a></li><li><a href="global.html#escapeHtml">escapeHtml</a></li><li><a href="global.html#exportData">exportData</a></li><li><a href="global.html#filterReviewCards">filterReviewCards</a></li><li><a href="global.html#filterSubmissions">filterSubmissions</a></li><li><a href="global.html#formatDate">formatDate</a></li><li><a href="global.html#generateToken">generateToken</a></li><li><a href="global.html#getAllUsers">getAllUsers</a></li><li><a href="global.html#getInitials">getInitials</a></li><li><a href="global.html#getQueryId">getQueryId</a></li><li><a href="global.html#getReviewerWorkload">getReviewerWorkload</a></li><li><a href="global.html#getToken">getToken</a></li><li><a href="global.html#getUser">getUser</a></li><li><a href="global.html#initReviewQueue">initReviewQueue</a></li><li><a href="global.html#initReviewWidget">initReviewWidget</a></li><li><a href="global.html#initializeDatabase">initializeDatabase</a></li><li><a href="global.html#loadAssignments">loadAssignments</a></li><li><a href="global.html#loadExistingReview">loadExistingReview</a></li><li><a href="global.html#loadReviewerFeedback">loadReviewerFeedback</a></li><li><a href="global.html#loadSubmissions">loadSubmissions</a></li><li><a href="global.html#loadUsers">loadUsers</a></li><li><a href="global.html#loadWorkload">loadWorkload</a></li><li><a href="global.html#login">login</a></li><li><a href="global.html#me">me</a></li><li><a href="global.html#myAssignments">myAssignments</a></li><li><a href="global.html#openAssignModal">openAssignModal</a></li><li><a href="global.html#openBulkStatusModal">openBulkStatusModal</a></li><li><a href="global.html#openEditRoleModal">openEditRoleModal</a></li><li><a href="global.html#pool">pool</a></li><li><a href="global.html#populateSidebar">populateSidebar</a></li><li><a href="global.html#register">register</a></li><li><a href="global.html#removeAssignment">removeAssignment</a></li><li><a href="global.html#renderNavigationByRole">renderNavigationByRole</a></li><li><a href="global.html#renderReviewCards">renderReviewCards</a></li><li><a href="global.html#renderReviewStats">renderReviewStats</a></li><li><a href="global.html#renderStars">renderStars</a></li><li><a href="global.html#renderSubmissions">renderSubmissions</a></li><li><a href="global.html#renderUsers">renderUsers</a></li><li><a href="global.html#renderWorkload">renderWorkload</a></li><li><a href="global.html#requireAuth">requireAuth</a></li><li><a href="global.html#roleBadgeClass">roleBadgeClass</a></li><li><a href="global.html#saveUserRole">saveUserRole</a></li><li><a href="global.html#setStarRating">setStarRating</a></li><li><a href="global.html#setToken">setToken</a></li><li><a href="global.html#setUser">setUser</a></li><li><a href="global.html#showSection">showSection</a></li><li><a href="global.html#signOut">signOut</a></li><li><a href="global.html#statusBadge">statusBadge</a></li><li><a href="global.html#submissionsData">submissionsData</a></li><li><a href="global.html#submitAssignments">submitAssignments</a></li><li><a href="global.html#submitBulkStatus">submitBulkStatus</a></li><li><a href="global.html#submitExport">submitExport</a></li><li><a href="global.html#submitReview">submitReview</a></li><li><a href="global.html#switchReviewTab">switchReviewTab</a></li><li><a href="global.html#updateStats">updateStats</a></li><li><a href="global.html#updateUserRole">updateUserRole</a></li><li><a href="global.html#userModel">userModel</a></li><li><a href="global.html#usersData">usersData</a></li><li><a href="global.html#workloadData">workloadData</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.5</a> on Fri May 01 2026 21:29:55 GMT-0500 (Central Daylight Time)
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>
